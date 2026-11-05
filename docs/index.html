@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32 Weather Installer</title>
+<meta name="description" content="ติดตั้งระบบรายงานสภาพอากาศลงบอร์ด ESP32-2432S028 ผ่านเบราว์เซอร์ ไม่ต้องลงโปรแกรม">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+<script type="module" src="esp-web-tools/install-button.js"></script>
+<style>
+:root{
+  --bg:#f5f7fb;--card:#ffffff;--text:#16202e;--muted:#5b6778;--line:#e2e7ef;
+  --accent:#1f6feb;--accent-ink:#ffffff;--ok:#1a7f37;--warn:#b35900;--code:#eef2f8;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0d1117;--card:#161b22;--text:#e6edf3;--muted:#9aa6b6;--line:#2a313c;
+    --accent:#4c8dff;--accent-ink:#0d1117;--ok:#3fb950;--warn:#e3a14a;--code:#1f2630;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0d1117;--card:#161b22;--text:#e6edf3;--muted:#9aa6b6;--line:#2a313c;
+  --accent:#4c8dff;--accent-ink:#0d1117;--ok:#3fb950;--warn:#e3a14a;--code:#1f2630;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.65 "Noto Sans Thai",system-ui,-apple-system,sans-serif}
+main{max-width:760px;margin:0 auto;padding:32px 16px 64px}
+h1{font-size:28px;line-height:1.3;margin:0 0 8px}
+h2{font-size:20px;margin:0 0 12px}
+p{margin:0 0 12px}
+.lead{color:var(--muted);margin-bottom:24px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:16px}
+.hero img{width:100%;height:auto;border-radius:10px;display:block;border:1px solid var(--line)}
+.caption{color:var(--muted);font-size:14px;margin-top:8px}
+ol.steps{margin:0;padding-left:22px}
+ol.steps li{margin-bottom:10px}
+.install{display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+.btn{appearance:none;border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);font:600 18px "Noto Sans Thai",system-ui,sans-serif;padding:14px 26px;cursor:pointer}
+.btn:hover{filter:brightness(1.08)}
+.note{border-left:4px solid var(--warn);padding:10px 14px;background:var(--code);border-radius:6px;font-size:15px}
+.ok{border-left-color:var(--ok)}
+code,kbd{background:var(--code);border-radius:5px;padding:1px 6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px}
+details{border-top:1px solid var(--line);padding:12px 0}
+details:first-of-type{border-top:0;padding-top:0}
+summary{cursor:pointer;font-weight:600}
+details p,details ul{margin-top:8px}
+ul{padding-left:20px;margin:0}
+a{color:var(--accent)}
+.muted{color:var(--muted);font-size:14px}
+table{border-collapse:collapse;width:100%;font-size:15px}
+td{border-top:1px solid var(--line);padding:8px 6px;vertical-align:top}
+td:first-child{white-space:nowrap;font-weight:600}
+</style>
+</head>
+<body>
+<main>
+  <h1>🌤️ ESP32 Weather</h1>
+  <p class="lead">ติดตั้งระบบรายงานสภาพอากาศลงบอร์ด <b>ESP32-2432S028</b> (จอเหลือง 2.8 นิ้ว) ผ่านเบราว์เซอร์ กดปุ่มเดียว ไม่ต้องลงโปรแกรม แล้วตั้งค่า Wi-Fi ในหน้านี้ได้เลย</p>
+
+  <div class="card hero">
+    <img src="preview.png" alt="ตัวอย่างหน้าจอ: อุณหภูมิ สภาพอากาศ ความชื้น ลม โอกาสฝน และหน้าตั้งค่า Wi-Fi" width="1960" height="480">
+    <div class="caption">หน้าจอบนบอร์ด: อุณหภูมิ, สภาพอากาศภาษาไทย, ความชื้น, ลม, โอกาสฝน, สูง/ต่ำ, UV, เวลาพระอาทิตย์ขึ้น/ตก อัปเดตเองทุก 10 นาที</div>
+  </div>
+
+  <div class="card">
+    <h2>ติดตั้ง 3 ขั้นตอน</h2>
+    <ol class="steps">
+      <li>เปิดหน้านี้ใน <b>Google Chrome</b> หรือ <b>Microsoft Edge</b> บน<b>คอมพิวเตอร์</b></li>
+      <li>เสียบบอร์ดเข้าคอมด้วยสาย USB ที่ส่งข้อมูลได้</li>
+      <li>กดปุ่มด้านล่าง → เลือกพอร์ต <b>CH340</b> → <b>Install</b> → รอจนเสร็จ แล้วกด <b>Connect to Wi-Fi</b> เพื่อใส่ชื่อและรหัส Wi-Fi บ้าน</li>
+    </ol>
+  </div>
+
+  <div class="card install">
+    <esp-web-install-button manifest="manifest.json">
+      <button class="btn" slot="activate">⚡ ติดตั้งลงบอร์ด</button>
+      <span slot="unsupported" class="note">เบราว์เซอร์นี้ติดตั้งไม่ได้ ให้เปิดหน้านี้ใน <b>Chrome</b> หรือ <b>Edge</b> บนคอมพิวเตอร์ (มือถือและ Safari ใช้ไม่ได้)</span>
+      <span slot="not-allowed" class="note">ต้องเปิดผ่านลิงก์ <b>https://</b> เท่านั้น</span>
+    </esp-web-install-button>
+    <p class="muted">เวอร์ชัน 3.0.0 · ถ้าระบบถามว่าจะ <i>Erase device</i> ไหม: ติดตั้งครั้งแรกให้ติ๊ก, อัปเดตให้<b>ไม่ต้องติ๊ก</b> (การตั้งค่าเดิมจะอยู่ครบ)</p>
+  </div>
+
+  <div class="card">
+    <h2>หลังติดตั้ง</h2>
+    <p>หลังตั้ง Wi-Fi บอร์ดจะรีสตาร์ทและแสดงสภาพอากาศภายใน 20 วินาที</p>
+    <table>
+      <tr><td>อัปเดตทันที</td><td>แตะจอ 1 ครั้ง</td></tr>
+      <tr><td>ดูบนมือถือ</td><td>เปิด <code>http://esp32-weather.local</code> (ต่อ Wi-Fi บ้านเดียวกัน) หรือกด <b>Visit Device</b> ในหน้าต่างติดตั้ง</td></tr>
+      <tr><td>เปลี่ยนเมือง</td><td>ในหน้าเว็บของบอร์ด ช่อง "เปลี่ยนเมือง"</td></tr>
+      <tr><td>เปลี่ยน Wi-Fi</td><td>กดปุ่มด้านบนอีกครั้ง → <b>Change Wi-Fi</b></td></tr>
+    </table>
+    <p class="note ok" style="margin-top:14px">หน้าจอที่ถูกต้อง: <b>พื้นดำ</b>, หัวจอ<b>สีน้ำเงิน</b>, ตัวเลข<b>สีขาว</b>, คำอธิบายอากาศ<b>สีเหลือง</b>, ป้าย<b>สีฟ้า</b></p>
+  </div>
+
+  <div class="card">
+    <h2>แก้ปัญหา</h2>
+    <details>
+      <summary>ภาพบนจอกลับด้าน, พื้นเป็นสีขาว หรือจอขาวล้วน</summary>
+      <p>จอรุ่นนี้แต่ละล็อตใช้ชิปต่างกัน ให้<b>กดจอค้างไว้ 6 วินาที</b> (กดแรงหน่อย) บอร์ดจะเปลี่ยนโหมดจอและรีสตาร์ท ทำซ้ำจนได้พื้นดำและตัวหนังสืออ่านได้ปกติ มี 6 โหมด</p>
+      <p>หรือกดปุ่มติดตั้ง → <b>Logs &amp; Console</b> → พิมพ์ <code>display</code> แล้วกด Enter</p>
+    </details>
+    <details>
+      <summary>หาพอร์ต CH340 ไม่เจอ</summary>
+      <ul>
+        <li>ลองสาย USB เส้นอื่น เพราะสายชาร์จอย่างเดียวส่งข้อมูลไม่ได้</li>
+        <li>Windows: ติดตั้งไดรเวอร์ <a href="https://www.wch-ic.com/downloads/CH341SER_EXE.html" target="_blank" rel="noopener">CH340</a> แล้วถอดสายเสียบใหม่</li>
+      </ul>
+    </details>
+    <details>
+      <summary>ติดตั้งค้างที่ "Connecting" หรือขึ้น error</summary>
+      <p><b>กดปุ่ม BOOT บนบอร์ดค้างไว้</b>ระหว่างเลือกพอร์ต แล้วปล่อยเมื่อเริ่มติดตั้ง ปิดแท็บอื่นที่เปิดพอร์ตอยู่ (เช่น esptool-js หรือ Serial Terminal) ก่อนด้วย</p>
+    </details>
+    <details>
+      <summary>ต่อ Wi-Fi ไม่สำเร็จ</summary>
+      <ul>
+        <li>บอร์ดใช้ได้เฉพาะ <b>Wi-Fi 2.4 GHz</b> ถ้าเป็นชื่อที่ลงท้าย 5G จะใช้ไม่ได้</li>
+        <li>ถ้าใช้ Hotspot มือถือ ให้ตั้งเป็นคลื่น 2.4 GHz</li>
+        <li>ตรวจตัวพิมพ์เล็ก/ใหญ่ของรหัสผ่าน</li>
+      </ul>
+    </details>
+    <details>
+      <summary>ไม่มีคอมพิวเตอร์ / ตั้งค่า Wi-Fi ด้วยมือถือ</summary>
+      <p>บอร์ดที่ยังไม่มี Wi-Fi จะปล่อยสัญญาณชื่อ <code>ESP32-Weather-Setup</code> ให้ใช้มือถือเชื่อมต่อ แล้ว<b>ปิดเน็ตมือถือชั่วคราว</b> จากนั้นเปิด <code>http://192.168.4.1</code></p>
+    </details>
+  </div>
+
+  <p class="muted">ข้อมูลอากาศจาก Open-Meteo · ฟอนต์ Noto Sans Thai (SIL OFL) · ติดตั้งด้วย ESP Web Tools ·
+    <a href="firmware/esp32-weather-full.bin">ดาวน์โหลดไฟล์เต็ม (.bin, flash ที่ 0x0)</a></p>
+</main>
+</body>
+</html>

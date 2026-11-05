@@ -1,0 +1,3 @@
+build/
+include/secrets.h
+__pycache__/
