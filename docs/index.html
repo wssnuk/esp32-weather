@@ -130,6 +130,22 @@ td:first-child{white-space:nowrap;font-weight:600}
     </details>
   </div>
 
+  <div class="card install" id="test">
+    <h2>🔧 ทดสอบจอ (สำหรับบอร์ดที่จอขาวล้วน)</h2>
+    <p>โปรแกรมนี้จะลองต่อจอ <b>6 แบบ</b> แบบละ 6 วินาที แต่ละแบบจะแสดง<b>ตัวเลขใหญ่ 1–6</b> และแถบสี แดง เขียว น้ำเงิน ถ้าแบบไหนมีภาพขึ้น แปลว่าเจอวิธีต่อจอที่ถูกต้อง</p>
+    <esp-web-install-button manifest="test/manifest.json">
+      <button class="btn" slot="activate" style="background:#6e40c9">🔧 ติดตั้งโปรแกรมทดสอบจอ</button>
+      <span slot="unsupported" class="note">ต้องใช้ Chrome หรือ Edge บนคอมพิวเตอร์</span>
+      <span slot="not-allowed" class="note">ต้องเปิดผ่าน https://</span>
+    </esp-web-install-button>
+    <ol class="steps">
+      <li>กดปุ่มด้านบน → เลือกพอร์ต → <b>Install</b> → รอจนเสร็จ</li>
+      <li>กด <b>Next</b> แล้วเลือก <b>Logs &amp; Console</b> (ถ้าไม่มีเมนูนี้ ให้ปิดหน้าต่าง แล้วกดปุ่มอีกครั้ง → เลือกพอร์ต → <b>Logs &amp; Console</b>)</li>
+      <li>ดู<b>จอบอร์ด</b>ประมาณ 40 วินาที และ<b>ถ่ายรูปข้อความใน Console</b> (บรรทัด "รหัสชิป ... ✅ / ❌")</li>
+      <li>เสร็จแล้ว ติดตั้งโปรแกรมสภาพอากาศกลับได้ด้วยปุ่มสีน้ำเงินด้านบน</li>
+    </ol>
+  </div>
+
   <p class="muted">ข้อมูลอากาศและฝุ่นจาก Open-Meteo · ฟอนต์ Noto Sans Thai (SIL OFL) · ติดตั้งด้วย ESP Web Tools ·
     <a href="firmware/esp32-weather-full.bin">ดาวน์โหลดไฟล์เต็ม (.bin, flash ที่ 0x0)</a></p>
 </main>
