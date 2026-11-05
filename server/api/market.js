@@ -67,32 +67,69 @@ function setState(now, lastTradeTime) {
 }
 
 // ---------- ราคาทองไทย: สมาคมค้าทองคำ ----------
-async function thaiGold() {
+// ---------- ราคาทองไทย: ลองหลายแหล่ง ----------
+function parseThaiTime(str) {
+  const s = String(str || '');
+  const d = s.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+  const t = s.match(/(\d{1,2}[:.]\d{2})/);
+  const n = s.match(/ครั้งที่\s*(\d+)/);
+  return { date: d ? d[1] : null, time: t ? t[1].replace('.', ':') : null, round: n ? parseInt(n[1], 10) : null };
+}
+
+async function goldFromGoldtraders() {
   const html = await getText('https://www.goldtraders.or.th/');
   const map = {};
   const re = /id="DetailPlace_uc_goldprices1_(lbl\w+)"[^>]*>([^<]*)</g;
   let m;
   while ((m = re.exec(html))) map[m[1]] = m[2].trim();
-  const out = {
-    barBuy: num(map.lblBLBuy),
-    barSell: num(map.lblBLSell),
-    ornBuy: num(map.lblOMBuy),
-    ornSell: num(map.lblOMSell),
-  };
+  const out = { barBuy: num(map.lblBLBuy), barSell: num(map.lblBLSell), ornBuy: num(map.lblOMBuy), ornSell: num(map.lblOMSell) };
   if (!out.barSell || !out.ornSell) throw new Error('parse failed');
-  // "06/11/2569 เวลา 09:21 น. (ครั้งที่ 3)" -> date, time, round
-  const asTime = map.lblAsTime || '';
-  const d = asTime.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
-  const t = asTime.match(/(\d{1,2}[:.]\d{2})/);
-  const n = asTime.match(/(\d+)\s*\)?\s*$/) || asTime.match(/ครั้งที่\s*(\d+)/);
-  out.date = d ? d[1] : null;
-  out.time = t ? t[1].replace('.', ':') : null;
-  out.round = n ? parseInt(n[1], 10) : null;
-  // การเปลี่ยนแปลงวันนี้ (ถ้าหน้าเว็บมี)
   const chg = Object.keys(map).find((k) => /Change/i.test(k));
-  out.change = chg ? num(map[chg]) : null;
-  out.source = 'goldtraders';
-  return out;
+  return { ...out, ...parseThaiTime(map.lblAsTime), change: chg ? num(map[chg]) : null, source: 'goldtraders' };
+}
+
+// ราคาสมาคมฯ ที่ร้านฮั่วเซ่งเฮงเผยแพร่ (GoldType "REF")
+async function goldFromHSH() {
+  const j = JSON.parse(await getText('https://apicheckprice.huasengheng.com/api/values/getprice/'));
+  const list = Array.isArray(j) ? j : j?.data || [];
+  const ref = list.find((x) => /REF/i.test(x.GoldType || '')) || list[0];
+  if (!ref) throw new Error('no REF');
+  const bar = { buy: num(ref.Buy), sell: num(ref.Sell) };
+  const orn = list.find((x) => /JEWEL|ORN|ทองรูป/i.test(x.GoldType || '') || /99/.test(x.GoldCode || ''));
+  if (!bar.sell) throw new Error('bad data');
+  return {
+    barBuy: bar.buy, barSell: bar.sell,
+    ornBuy: orn ? num(orn.Buy) : Math.round((bar.buy * 0.98) / 50) * 50,
+    ornSell: bar.sell + 500,
+    ...parseThaiTime(ref.StrTimeUpdate || ref.TimeUpdate || ''),
+    change: num(ref.BuyChange ?? ref.SellChange),
+    source: 'hsh',
+  };
+}
+
+async function goldFromChnwt() {
+  const j = JSON.parse(await getText('https://api.chnwt.dev/thai-gold-api/latest'));
+  const p = j?.response?.price;
+  if (!p) throw new Error('no price');
+  return {
+    barBuy: num(p.gold_bar?.buy), barSell: num(p.gold_bar?.sell),
+    ornBuy: num(p.gold?.buy), ornSell: num(p.gold?.sell),
+    ...parseThaiTime(`${j.response.date || ''} ${j.response.update_time || ''}`),
+    change: num(p.change?.compare_previous),
+    source: 'chnwt',
+  };
+}
+
+async function thaiGold(errors) {
+  for (const [name, fn] of [['goldtraders', goldFromGoldtraders], ['hsh', goldFromHSH], ['chnwt', goldFromChnwt]]) {
+    try {
+      const g = await fn();
+      if (g.barSell) return g;
+    } catch (e) {
+      errors['gold_' + name] = String(e.message || e);
+    }
+  }
+  throw new Error('all sources failed');
 }
 
 // ราคาประมาณจากตลาดโลก (ใช้เมื่อดึงจากสมาคมไม่ได้)
@@ -119,9 +156,9 @@ export async function collect() {
   const [set, set50, xau, thb, gold] = await Promise.all([
     settle('set', () => yahoo('^SET.BK')),
     settle('set50', () => yahoo('^SET50.BK')),
-    settle('xau', () => yahoo('GC=F', '5d', '1h')),
-    settle('usdthb', () => yahoo('THB=X', '5d', '1h')),
-    settle('gold', thaiGold),
+    settle('xau', () => yahoo('GC=F', '1d', '15m')),
+    settle('usdthb', () => yahoo('THB=X', '1d', '15m')),
+    settle('gold', () => thaiGold(errors)),
   ]);
 
   let goldOut = gold;
