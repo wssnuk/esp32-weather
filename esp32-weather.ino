@@ -18,6 +18,8 @@
 Settings settings;
 Weather weather;
 AirQuality air;
+Market market;
+static unsigned long nextMarketAt = 0;
 
 static bool portalMode = false;
 static unsigned long portalStartedAt = 0;
@@ -326,6 +328,19 @@ void loop() {
 
   if (touch == Display::Touch::Tap) Display::nextPage();
 
+  // ข้อมูลตลาด (ทอง/หุ้น) แยกรอบจากข้อมูลอากาศ
+  if (weather.fetchedAt != 0 && (long)(millis() - nextMarketAt) >= 0) {
+    bool mok = MarketApi::fetch(market);
+    if (mok) {
+      Serial.printf("[Market] SET %.2f (%+.2f%%) | ทองแท่งขาย %.0f บาท | USD %.2f\n", market.setPrice,
+                    market.setPct, market.barSell, market.usdthb);
+      Display::refresh();
+    } else {
+      Serial.println("[Market] ดึงข้อมูลไม่สำเร็จ: " + market.error);
+    }
+    nextMarketAt = millis() + (mok ? MARKET_UPDATE_MS : WEATHER_RETRY_MS);
+  }
+
   if ((long)(millis() - nextWeatherAt) >= 0) {
     Display::showUpdating();
     Display::setRgb(false, true, false);  // เขียว = กำลังดึงข้อมูล
@@ -342,7 +357,7 @@ void loop() {
     } else {
       Serial.println("[Weather] ดึงข้อมูลไม่สำเร็จ: " + weather.error);
     }
-    Display::showWeather(settings, weather, air);
+    Display::showWeather(settings, weather, air, market);
     // เตือนฝนด้วยเสียง: ครั้งเดียวต่อช่วงฝน และไม่ส่งเสียงตอนกลางคืน
     static bool rainAlerted = false;
     if (ok && weather.rainNext2h >= RAIN_ALERT_PERCENT) {

@@ -137,6 +137,20 @@ void handleApi() {
     ao["level"] = lv;
     ao["levelName"] = WeatherApi::pm25LevelName(lv);
   }
+  if (market.valid) {
+    JsonObject mo = doc["market"].to<JsonObject>();
+    if (market.goldValid) {
+      mo["barBuy"] = market.barBuy; mo["barSell"] = market.barSell;
+      mo["ornBuy"] = market.ornBuy; mo["ornSell"] = market.ornSell;
+      mo["goldChange"] = market.goldChange; mo["goldTime"] = market.goldTime;
+      mo["goldEstimate"] = market.goldEstimate;
+    }
+    if (market.setValid) {
+      mo["set"] = market.setPrice; mo["setChange"] = market.setChange; mo["setPct"] = market.setPct;
+      mo["setState"] = market.setState; mo["set50"] = market.set50Price; mo["set50Pct"] = market.set50Pct;
+    }
+    mo["usdthb"] = market.usdthb;
+  }
   JsonObject dev = doc["device"].to<JsonObject>();
   dev["ip"] = WiFi.localIP().toString();
   dev["rssi"] = WiFi.RSSI();

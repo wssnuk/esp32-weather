@@ -286,8 +286,12 @@ void title(const char* text) {
 }
 
 // ---------------- หน้าจอข้อมูลอากาศ ----------------
-constexpr int PAGE_COUNT = 3;
-int page = 0;
+constexpr int PAGE_COUNT = 6;
+enum { PAGE_TODAY = 0, PAGE_NOW, PAGE_AIR, PAGE_FORECAST, PAGE_GOLD, PAGE_SET };
+int page = PAGE_TODAY;
+const Market* curM = nullptr;
+constexpr uint32_t C_UP = 0x00FF00;
+constexpr uint32_t C_DOWN = 0xFF0000;
 const Settings* curS = nullptr;
 const Weather* curW = nullptr;
 const AirQuality* curA = nullptr;
@@ -306,14 +310,19 @@ void drawHeader() {
   gfx->setFont(&fonts::FreeSansBold9pt7b);
   gfx->setTextColor(c(C_TEXT));
   gfx->setTextDatum(middle_left);
-  String city = curS->city;
-  int comma = city.indexOf(',');
-  if (city.length() > 18 && comma > 0) city = city.substring(0, comma);
-  if (city.length() > 18) city = city.substring(0, 17) + ".";
-  gfx->drawString(city, 8, 13);
+  if (page == PAGE_TODAY || page == PAGE_GOLD || page == PAGE_SET) {
+    ThaiTextId title = page == PAGE_TODAY ? TT_TITLE_TODAY : page == PAGE_GOLD ? TT_TITLE_GOLD : TT_TITLE_SET;
+    drawThai(title, 8, 2, C_TEXT, C_HEADER);
+  } else {
+    String city = curS->city;
+    int comma = city.indexOf(',');
+    if (city.length() > 15 && comma > 0) city = city.substring(0, comma);
+    if (city.length() > 15) city = city.substring(0, 14) + ".";
+    gfx->drawString(city, 8, 13);
+  }
   // จุดบอกหน้า
   for (int i = 0; i < PAGE_COUNT; i++) {
-    int x = 214 + i * 11;
+    int x = 182 + i * 10;
     if (i == page) gfx->fillCircle(x, 13, 3, c(C_TEXT));
     else gfx->drawCircle(x, 13, 3, c(C_TEXT));
   }
@@ -420,23 +429,252 @@ void drawForecastPage() {
   }
 }
 
+// ---------- ตัวช่วยตัวเลข ----------
+String withCommas(float v, int decimals) {
+  if (isnan(v)) return "-";
+  String s = String(fabs(v), decimals);
+  int dot = s.indexOf('.');
+  int intLen = dot < 0 ? s.length() : dot;
+  String out;
+  for (int i = 0; i < (int)s.length(); i++) {
+    if (i > 0 && i < intLen && (intLen - i) % 3 == 0) out += ',';
+    out += s[i];
+  }
+  return (v < 0 ? "-" : "") + out;
+}
+
+String signedStr(float v, int decimals) {
+  if (isnan(v)) return "-";
+  return (v > 0 ? "+" : "") + withCommas(v, decimals);
+}
+
+uint32_t trendColor(float v) { return isnan(v) || v == 0 ? C_TEXT : (v > 0 ? C_UP : C_DOWN); }
+
+// ---------- หน้า "วันนี้" ----------
+int lastSecond = -1;
+
+void drawBigClock(bool force) {
+  struct tm t;
+  if (!getLocalTime(&t, 0)) return;
+  if (!force && t.tm_sec == lastSecond) return;
+  bool minuteChanged = force || t.tm_sec == 0 || lastSecond < 0;
+  lastSecond = t.tm_sec;
+  char buf[8];
+  if (minuteChanged) {
+    gfx->fillRect(0, 30, 320, 78, c(C_BG));
+    snprintf(buf, sizeof(buf), "%02d:%02d", t.tm_hour, t.tm_min);
+    gfx->setFont(&fonts::Font8);
+    gfx->setTextColor(c(C_TEXT));
+    gfx->setTextDatum(top_left);
+    gfx->drawString(buf, 10, 32);
+  }
+  snprintf(buf, sizeof(buf), "%02d", t.tm_sec);
+  gfx->setFont(&fonts::FreeSansBold12pt7b);
+  gfx->setTextColor(c(C_ACCENT), c(C_BG));
+  gfx->setTextDatum(top_left);
+  gfx->fillRect(272, 40, 46, 24, c(C_BG));
+  gfx->drawString(buf, 274, 40);
+}
+
+void drawThaiDate() {
+  struct tm t;
+  if (!getLocalTime(&t, 0)) return;
+  gfx->fillRect(0, 110, 320, 32, c(C_BG));
+  int x = 8;
+  ThaiTextId wd = (ThaiTextId)(TT_WDT_0 + t.tm_wday);
+  drawThai(wd, x, 112, C_SUN, C_BG);
+  x += thaiWidth(wd) + 4;
+  gfx->setFont(&fonts::FreeSansBold12pt7b);
+  gfx->setTextColor(c(C_SUN));
+  gfx->setTextDatum(top_left);
+  String day = String(t.tm_mday);
+  gfx->drawString(day, x, 117);
+  x += gfx->textWidth(day) + 6;
+  ThaiTextId mon = (ThaiTextId)(TT_MON_1 + t.tm_mon);
+  drawThai(mon, x, 112, C_SUN, C_BG);
+  x += thaiWidth(mon) + 6;
+  gfx->drawString(String(t.tm_year + 1900 + 543), x, 117);
+}
+
+void drawTodayPage() {
+  lastSecond = -1;
+  drawBigClock(true);
+  drawThaiDate();
+  // กล่องอากาศย่อ
+  gfx->drawRoundRect(4, 146, 152, 90, 8, c(C_BORDER));
+  gfx->drawRoundRect(5, 147, 150, 88, 7, c(C_BORDER));
+  if (curW && curW->valid) {
+    drawIcon(curW->weatherCode, curW->isDay, 50, 184);
+    gfx->setFont(&fonts::FreeSansBold18pt7b);
+    gfx->setTextColor(c(C_TEXT));
+    gfx->setTextDatum(top_left);
+    String t = fmt(curW->temp, 0);
+    gfx->drawString(t, 95, 152);
+    degree(95 + gfx->textWidth(t) + 5, 157, 3, C_TEXT);
+    drawThai(TT_MINI_RAIN, 95, 184, C_LABEL, C_BG);
+    gfx->setFont(&fonts::FreeSansBold9pt7b);
+    gfx->setTextColor(c(C_RAIN));
+    gfx->drawString(curW->rainChance < 0 ? String("-") : String(curW->rainChance) + "%",
+                    95 + thaiWidth(TT_MINI_RAIN) + 3, 188);
+    if (curA && curA->valid) {
+      gfx->setTextColor(c(aqColor(WeatherApi::pm25Level(curA->pm25))));
+      gfx->drawString("PM " + fmt(curA->pm25, 0), 95, 212);
+    }
+  }
+  // กล่องตลาดย่อ
+  gfx->drawRoundRect(162, 146, 154, 90, 8, c(C_SUN));
+  gfx->drawRoundRect(163, 147, 152, 88, 7, c(C_SUN));
+  drawThai(TT_MINI_SET, 172, 149, C_LABEL, C_BG);
+  gfx->setFont(&fonts::FreeSansBold9pt7b);
+  gfx->setTextDatum(top_left);
+  if (curM && curM->setValid) {
+    gfx->setTextColor(c(C_TEXT));
+    gfx->drawString(withCommas(curM->setPrice, 2), 172, 170);
+    gfx->setTextColor(c(trendColor(curM->setChange)));
+    gfx->setTextDatum(top_right);
+    gfx->drawString(signedStr(curM->setPct, 2) + "%", 310, 170);
+  }
+  drawThai(TT_MINI_GOLD, 172, 191, C_LABEL, C_BG);
+  gfx->setTextDatum(top_left);
+  if (curM && curM->goldValid) {
+    gfx->setTextColor(c(C_TEXT));
+    gfx->drawString(withCommas(curM->barSell, 0), 172, 212);
+    gfx->setTextColor(c(trendColor(curM->goldChange)));
+    gfx->setTextDatum(top_right);
+    if (!isnan(curM->goldChange)) gfx->drawString(signedStr(curM->goldChange, 0), 310, 212);
+  }
+}
+
+// ---------- หน้าราคาทอง ----------
+void goldRow(int y, ThaiTextId title, float buy, float sell) {
+  drawThai(title, 8, y, C_SUN, C_BG);
+  drawThai(TT_GOLD_BUY, 80, y + 24, C_LABEL, C_BG, 1);
+  drawThai(TT_GOLD_SELL, 240, y + 24, C_LABEL, C_BG, 1);
+  gfx->setFont(&fonts::FreeSansBold18pt7b);
+  gfx->setTextColor(c(C_TEXT));
+  gfx->setTextDatum(top_center);
+  gfx->drawString(withCommas(buy, 0), 80, y + 44);
+  gfx->drawString(withCommas(sell, 0), 240, y + 44);
+}
+
+void drawGoldPage() {
+  if (!curM || !curM->goldValid) {
+    drawThai(TT_NO_DATA, 160, 100, C_WARN, C_BG, 1);
+    return;
+  }
+  const Market& m = *curM;
+  goldRow(30, TT_GOLD_BAR, m.barBuy, m.barSell);
+  gfx->drawFastHLine(8, 107, 304, c(C_BORDER));
+  goldRow(110, TT_GOLD_ORN, m.ornBuy, m.ornSell);
+  gfx->drawFastHLine(8, 187, 304, c(C_BORDER));
+  // บรรทัดล่าง: เปลี่ยนแปลง + เวลา / ทองโลก + ดอลลาร์
+  int x = 8;
+  gfx->setFont(&fonts::FreeSansBold9pt7b);
+  gfx->setTextDatum(top_left);
+  if (m.goldEstimate) {
+    drawThai(TT_GOLD_ESTIMATE, x, 191, 0xFF00FF, C_BG);
+  } else {
+    drawThai(TT_GOLD_CHANGE, x, 191, C_LABEL, C_BG);
+    x += thaiWidth(TT_GOLD_CHANGE) + 6;
+    gfx->setTextColor(c(trendColor(m.goldChange)));
+    gfx->drawString(signedStr(m.goldChange, 0), x, 194);
+  }
+  if (m.goldTime.length()) {
+    drawThai(TT_UPDATED, 200, 191, C_LABEL, C_BG);
+    gfx->setTextColor(c(C_TEXT));
+    gfx->drawString(m.goldTime, 204 + thaiWidth(TT_UPDATED), 194);
+  }
+  drawThai(TT_WORLD_GOLD, 8, 214, C_LABEL, C_BG);
+  x = 12 + thaiWidth(TT_WORLD_GOLD);
+  gfx->setTextColor(c(C_TEXT));
+  String xs = "$" + withCommas(m.xau, 0);
+  gfx->drawString(xs, x, 217);
+  x += gfx->textWidth(xs) + 4;
+  gfx->setTextColor(c(trendColor(m.xauPct)));
+  gfx->drawString(signedStr(m.xauPct, 1) + "%", x, 217);
+  drawThai(TT_USD_RATE, 200, 214, C_LABEL, C_BG);
+  gfx->setTextColor(c(C_TEXT));
+  gfx->drawString(String(m.usdthb, 2), 204 + thaiWidth(TT_USD_RATE), 217);
+}
+
+// ---------- หน้าหุ้นไทย ----------
+void drawSetPage() {
+  if (!curM || !curM->setValid) {
+    drawThai(TT_NO_DATA, 160, 100, C_WARN, C_BG, 1);
+    return;
+  }
+  const Market& m = *curM;
+  uint32_t col = trendColor(m.setChange);
+  gfx->setFont(&fonts::FreeSansBold9pt7b);
+  gfx->setTextColor(c(C_LABEL));
+  gfx->setTextDatum(top_left);
+  gfx->drawString("SET", 8, 32);
+  gfx->setFont(&fonts::FreeSansBold24pt7b);
+  gfx->setTextColor(c(C_TEXT));
+  gfx->drawString(withCommas(m.setPrice, 2), 8, 50);
+  gfx->setFont(&fonts::FreeSansBold12pt7b);
+  gfx->setTextColor(c(col));
+  gfx->drawString(signedStr(m.setChange, 2) + "  (" + signedStr(m.setPct, 2) + "%)", 8, 94);
+  // สถานะตลาด
+  ThaiTextId st = m.setState == "open" ? TT_MKT_OPEN : m.setState == "break" ? TT_MKT_BREAK : TT_MKT_CLOSED;
+  uint32_t stc = m.setState == "open" ? C_UP : m.setState == "break" ? C_SUN : 0xFF00FF;
+  int sw = thaiWidth(st) + 16;
+  gfx->drawRoundRect(312 - sw, 30, sw, 26, 8, c(stc));
+  drawThai(st, 312 - sw / 2, 32, stc, C_BG, 1);
+  // กราฟระหว่างวัน
+  const int gx = 8, gy = 124, gw = 304, gh = 76;
+  gfx->drawRect(gx, gy, gw, gh, c(C_BORDER));
+  if (m.sparkCount >= 2) {
+    float lo = m.setPrev, hi = m.setPrev;
+    for (int i = 0; i < m.sparkCount; i++) { lo = min(lo, m.spark[i]); hi = max(hi, m.spark[i]); }
+    if (hi - lo < 0.5f) { hi += 0.25f; lo -= 0.25f; }
+    auto yOf = [&](float v) { return gy + gh - 4 - (int)((v - lo) / (hi - lo) * (gh - 8)); };
+    int py = yOf(m.setPrev);  // เส้นปิดวันก่อน (เส้นประ)
+    for (int x = gx + 2; x < gx + gw - 2; x += 6) gfx->drawFastHLine(x, py, 3, c(C_TEXT));
+    for (int i = 1; i < m.sparkCount; i++) {
+      int x0 = gx + 2 + (i - 1) * (gw - 4) / (m.sparkCount - 1);
+      int x1 = gx + 2 + i * (gw - 4) / (m.sparkCount - 1);
+      gfx->drawLine(x0, yOf(m.spark[i - 1]), x1, yOf(m.spark[i]), c(col));
+      gfx->drawLine(x0, yOf(m.spark[i - 1]) + 1, x1, yOf(m.spark[i]) + 1, c(col));
+    }
+  }
+  // บรรทัดล่าง
+  gfx->setFont(&fonts::FreeSansBold9pt7b);
+  gfx->setTextDatum(top_left);
+  gfx->setTextColor(c(C_LABEL));
+  gfx->drawString("SET50", 8, 210);
+  gfx->setTextColor(c(C_TEXT));
+  String s50 = withCommas(m.set50Price, 2);
+  gfx->drawString(s50, 70, 210);
+  gfx->setTextColor(c(trendColor(m.set50Change)));
+  gfx->drawString(signedStr(m.set50Pct, 2) + "%", 76 + gfx->textWidth(s50), 210);
+  // ปิดวันก่อน (ใต้ป้ายสถานะตลาด)
+  drawThai(TT_PREV_CLOSE, 312 - thaiWidth(TT_PREV_CLOSE), 62, C_LABEL, C_BG);
+  gfx->setTextColor(c(C_TEXT));
+  gfx->setTextDatum(top_right);
+  gfx->drawString(withCommas(m.setPrev, 2), 312, 84);
+}
+
 void render() {
   if (!curS || !curW) return;
   clearScreen();
   drawHeader();
-  if (!curW->valid) {
+  if (!curW->valid && (page == PAGE_NOW || page == PAGE_AIR || page == PAGE_FORECAST)) {
     drawThai(TT_FETCH_FAILED, 160, 100, C_WARN, C_BG, 1);
     gfx->setFont(&fonts::Font2);
     gfx->setTextColor(c(C_MUTED));
     gfx->setTextDatum(middle_center);
     gfx->drawString(curW->error, 160, 140);
-  } else if (page == 0) {
+  } else if (page == PAGE_NOW) {
     drawNowPage();
-  } else if (page == 1) {
+  } else if (page == PAGE_AIR) {
     drawAirPage();
-  } else {
+  } else if (page == PAGE_FORECAST) {
     drawForecastPage();
   }
+  if (page == PAGE_TODAY) drawTodayPage();
+  else if (page == PAGE_GOLD) drawGoldPage();
+  else if (page == PAGE_SET) drawSetPage();
   weatherShown = true;
 }
 
@@ -542,11 +780,16 @@ void showUpdating() {
   gfx->fillRect(0, 26, 320, 3, c(C_ACCENT));
 }
 
-void showWeather(const Settings& s, const Weather& w, const AirQuality& a) {
+void showWeather(const Settings& s, const Weather& w, const AirQuality& a, const Market& m) {
   curS = &s;
   curW = &w;
   curA = &a;
+  curM = &m;
   render();
+}
+
+void refresh() {
+  if (weatherShown) render();
 }
 
 void nextPage() {
@@ -578,7 +821,13 @@ void showDisplayMode(uint8_t mode) {
 Touch loop() {
   if (weatherShown) drawClock();
   // สลับคำอธิบายอากาศกับคำเตือนฝนทุก 4 วินาที
-  if (weatherShown && page == 0 && curW && curW->valid && curW->rainNext2h >= RAIN_ALERT_PERCENT &&
+  if (weatherShown && page == PAGE_TODAY) {
+    drawBigClock(false);
+    static int lastDay = -1;
+    struct tm t;
+    if (getLocalTime(&t, 0) && t.tm_mday != lastDay) { lastDay = t.tm_mday; drawThaiDate(); }
+  }
+  if (weatherShown && page == PAGE_NOW && curW && curW->valid && curW->rainNext2h >= RAIN_ALERT_PERCENT &&
       millis() > alertToggleAt) {
     alertToggleAt = millis() + 4000;
     showingAlert = !showingAlert;

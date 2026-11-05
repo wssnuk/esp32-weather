@@ -53,6 +53,12 @@ static const char PAGE_DASHBOARD[] PROGMEM = R"HTML(<!doctype html><html lang="t
   <div style="display:flex;align-items:baseline;gap:12px"><span id="pm25" style="font-size:44px;font-weight:700">-</span><b id="aqlevel"></b></div>
   <div class="muted" id="airmore"></div>
 </div>
+<div class="card" id="mkt" style="display:none"><div class="muted" style="margin-bottom:8px">ราคาทอง &amp; หุ้นไทย</div><div class="grid">
+  <div class="item">ทองคำแท่ง รับซื้อ/ขายออก<b id="gbar">-</b></div>
+  <div class="item">ทองรูปพรรณ รับซื้อ/ขายออก<b id="gorn">-</b></div>
+  <div class="item">ดัชนี SET<b id="setv">-</b></div>
+  <div class="item">SET50 · ดอลลาร์<b id="set50">-</b></div>
+</div></div>
 <div class="card"><div class="muted" style="margin-bottom:8px">พยากรณ์ 3 วัน</div><div class="grid" id="fc" style="grid-template-columns:1fr 1fr 1fr"></div></div>
 <div class="card grid">
   <div class="item">รู้สึกเหมือน<b id="feels">-</b></div>
@@ -96,6 +102,10 @@ async function load(){
       $('airmore').textContent='PM10 '+fx(w.air.pm10,0)+' · AQI (US) '+w.air.aqi;}
     if(w.rainNext2h>=60){$('alert').style.display='';$('alertText').textContent='ฝนอาจตกภายใน 2 ชั่วโมง (โอกาส '+w.rainNext2h+'%)';}
     else $('alert').style.display='none';
+    if(w.market){const m=w.market,n=(v,d=0)=>v==null?'-':Number(v).toLocaleString('th-TH',{minimumFractionDigits:d,maximumFractionDigits:d});
+      $('mkt').style.display='';$('gbar').textContent=n(m.barBuy)+' / '+n(m.barSell);$('gorn').textContent=n(m.ornBuy)+' / '+n(m.ornSell);
+      $('setv').textContent=n(m.set,2)+' ('+(m.setPct>0?'+':'')+n(m.setPct,2)+'%)';$('setv').style.color=m.setChange>0?'#1a9f3a':m.setChange<0?'#d63333':'';
+      $('set50').textContent=n(m.set50,2)+' · '+n(m.usdthb,2)+' ฿';}
     const DN=['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
     $('fc').innerHTML='';
     (w.forecast||[]).forEach((d,i)=>{const e=document.createElement('div');e.className='item';e.style.textAlign='center';
