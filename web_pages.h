@@ -47,6 +47,13 @@ static const char PAGE_DASHBOARD[] PROGMEM = R"HTML(<!doctype html><html lang="t
   <div id="desc">กำลังโหลดข้อมูล...</div>
   <div class="muted" id="range"></div>
 </div>
+<div class="card" id="alert" style="display:none;border:2px solid #4dc3ff">☔ <b id="alertText"></b></div>
+<div class="card" id="aircard" style="display:none">
+  <div class="muted">ฝุ่น PM2.5 (มคก./ลบ.ม.)</div>
+  <div style="display:flex;align-items:baseline;gap:12px"><span id="pm25" style="font-size:44px;font-weight:700">-</span><b id="aqlevel"></b></div>
+  <div class="muted" id="airmore"></div>
+</div>
+<div class="card"><div class="muted" style="margin-bottom:8px">พยากรณ์ 3 วัน</div><div class="grid" id="fc" style="grid-template-columns:1fr 1fr 1fr"></div></div>
 <div class="card grid">
   <div class="item">รู้สึกเหมือน<b id="feels">-</b></div>
   <div class="item">ความชื้น<b id="hum">-</b></div>
@@ -83,6 +90,19 @@ async function load(){
     $('pres').textContent=fx(w.pressure,0)+' hPa'; $('rain').textContent=fx(w.precipitation)+' มม.';
     $('chance').textContent=(w.rainChance<0?'-':w.rainChance+' %'); $('cloud').textContent=w.cloudCover+' %';
     $('uv').textContent=fx(w.uvMax); $('rise').textContent=w.sunrise; $('set').textContent=w.sunset;
+    const AQC=['#0bb4e8','#22a83a','#d9a400','#e8590c','#c2255c'];
+    if(w.air){$('aircard').style.display='';$('pm25').textContent=fx(w.air.pm25,0);$('pm25').style.color=AQC[w.air.level]||'';
+      $('aqlevel').textContent=w.air.levelName;$('aqlevel').style.color=AQC[w.air.level]||'';
+      $('airmore').textContent='PM10 '+fx(w.air.pm10,0)+' · AQI (US) '+w.air.aqi;}
+    if(w.rainNext2h>=60){$('alert').style.display='';$('alertText').textContent='ฝนอาจตกภายใน 2 ชั่วโมง (โอกาส '+w.rainNext2h+'%)';}
+    else $('alert').style.display='none';
+    const DN=['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
+    $('fc').innerHTML='';
+    (w.forecast||[]).forEach((d,i)=>{const e=document.createElement('div');e.className='item';e.style.textAlign='center';
+      const day=i==0?'พรุ่งนี้':DN[new Date(d.date+'T00:00').getDay()];
+      e.innerHTML='<div></div><div style="font-size:30px"></div><b></b><div class="muted"></div>';
+      e.children[0].textContent=day;e.children[1].textContent=d.icon;e.children[2].textContent=fx(d.max,0)+'° / '+fx(d.min,0)+'°';
+      e.children[3].textContent='ฝน '+(d.rain<0?'-':d.rain+'%');$('fc').appendChild(e);});
     $('updated').textContent='ข้อมูล ณ '+w.time.replace('T',' ')+' ('+w.timezone+') · อัปเดตเมื่อ '+w.ageSec+' วินาทีที่แล้ว';
   }catch(e){$('desc').textContent='เชื่อมต่อบอร์ดไม่ได้';}
 }

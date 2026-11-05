@@ -64,9 +64,10 @@ bool fetch(double lat, double lon, Weather& w) {
                "&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,"
                "precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,"
                "wind_direction_10m"
-               "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,"
+               "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,"
                "uv_index_max,sunrise,sunset"
-               "&timezone=auto&forecast_days=1";
+               "&hourly=precipitation_probability&forecast_hours=3"
+               "&timezone=auto&forecast_days=4";
   JsonDocument doc;
   String err;
   if (!getJson(url, doc, err)) {
@@ -98,10 +99,67 @@ bool fetch(double lat, double lon, Weather& w) {
   w.uvMax = f(d["uv_index_max"][0]);
   w.sunrise = hhmm(d["sunrise"][0] | "");
   w.sunset = hhmm(d["sunset"][0] | "");
+  for (int i = 0; i < 3; i++) {
+    DayForecast& day = w.days[i];
+    day.date = String((const char*)(d["time"][i + 1] | ""));
+    day.code = n(d["weather_code"][i + 1]);
+    day.tmax = f(d["temperature_2m_max"][i + 1]);
+    day.tmin = f(d["temperature_2m_min"][i + 1]);
+    day.rainChance = n(d["precipitation_probability_max"][i + 1]);
+  }
+  w.rainNext2h = -1;
+  JsonArrayConst hp = doc["hourly"]["precipitation_probability"];
+  for (size_t i = 0; i < hp.size() && i < 3; i++)
+    if (!hp[i].isNull()) w.rainNext2h = max(w.rainNext2h, hp[i].as<int>());
   w.fetchedAt = millis();
   w.error = "";
   w.valid = true;
   return true;
+}
+
+bool fetchAir(double lat, double lon, AirQuality& a) {
+  String url = "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + String(lat, 4) +
+               "&longitude=" + String(lon, 4) + "&current=pm2_5,pm10,us_aqi&timezone=auto";
+  JsonDocument doc;
+  String err;
+  if (!getJson(url, doc, err)) {
+    a.error = err;
+    return false;
+  }
+  JsonObjectConst c = doc["current"];
+  if (c.isNull()) {
+    a.error = doc["reason"] | "ข้อมูลไม่ถูกต้อง";
+    return false;
+  }
+  a.pm25 = f(c["pm2_5"]);
+  a.pm10 = f(c["pm10"]);
+  a.usAqi = n(c["us_aqi"]);
+  a.error = "";
+  a.valid = !isnan(a.pm25);
+  return a.valid;
+}
+
+int pm25Level(float v) {
+  if (isnan(v)) return -1;
+  if (v <= 15) return 0;
+  if (v <= 25) return 1;
+  if (v <= 37.5) return 2;
+  if (v <= 75) return 3;
+  return 4;
+}
+
+const char* pm25LevelName(int level) {
+  static const char* names[] = {"ดีมาก", "ดี", "ปานกลาง", "เริ่มมีผลกระทบต่อสุขภาพ", "มีผลกระทบต่อสุขภาพ"};
+  return (level >= 0 && level <= 4) ? names[level] : "-";
+}
+
+int weekday(const String& date) {
+  if (date.length() < 10) return -1;
+  int y = date.substring(0, 4).toInt(), m = date.substring(5, 7).toInt(), d = date.substring(8, 10).toInt();
+  if (m < 1 || m > 12) return -1;
+  static const int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+  if (m < 3) y -= 1;
+  return (y + y / 4 - y / 100 + y / 400 + t[m - 1] + d) % 7;
 }
 
 bool geocode(const String& city, double& lat, double& lon, String& displayName) {

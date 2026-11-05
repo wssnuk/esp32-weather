@@ -115,6 +115,27 @@ void handleApi() {
     doc["sunrise"] = weather.sunrise;
     doc["sunset"] = weather.sunset;
     doc["ageSec"] = (millis() - weather.fetchedAt) / 1000;
+    doc["rainNext2h"] = weather.rainNext2h;
+    JsonArray fc = doc["forecast"].to<JsonArray>();
+    for (const DayForecast& d : weather.days) {
+      if (d.date.isEmpty()) continue;
+      JsonObject o = fc.add<JsonObject>();
+      o["date"] = d.date;
+      o["icon"] = WeatherApi::icon(d.code, true);
+      o["description"] = WeatherApi::describe(d.code);
+      o["max"] = d.tmax;
+      o["min"] = d.tmin;
+      o["rain"] = d.rainChance;
+    }
+  }
+  if (air.valid) {
+    JsonObject ao = doc["air"].to<JsonObject>();
+    int lv = WeatherApi::pm25Level(air.pm25);
+    ao["pm25"] = air.pm25;
+    ao["pm10"] = air.pm10;
+    ao["aqi"] = air.usAqi;
+    ao["level"] = lv;
+    ao["levelName"] = WeatherApi::pm25LevelName(lv);
   }
   JsonObject dev = doc["device"].to<JsonObject>();
   dev["ip"] = WiFi.localIP().toString();

@@ -18,7 +18,10 @@ void showWifiFailed();
 void showPortal(const char* apSsid, const String& ip);
 void showLoading();
 void showUpdating();                       // แถบเล็ก ๆ ระหว่างอัปเดต
-void showWeather(const Settings& s, const Weather& w, const String& ip);
+// แสดงข้อมูลอากาศ (มี 3 หน้า: ปัจจุบัน / คุณภาพอากาศ / พยากรณ์ 3 วัน)
+void showWeather(const Settings& s, const Weather& w, const AirQuality& a);
+void nextPage();                           // แตะจอ = เปลี่ยนหน้า
+void beep();                               // เสียงเตือนสั้น ๆ ผ่านลำโพงบนบอร์ด
 void showDisplayMode(uint8_t mode);
 void setRgb(bool r, bool g, bool b);       // ไฟ LED RGB บนบอร์ด
 Touch loop();                              // อ่านการแตะจอ + อัปเดตนาฬิกา

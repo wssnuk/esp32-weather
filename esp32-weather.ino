@@ -17,6 +17,7 @@
 
 Settings settings;
 Weather weather;
+AirQuality air;
 
 static bool portalMode = false;
 static unsigned long portalStartedAt = 0;
@@ -57,6 +58,19 @@ static void printWeatherReport() {
   Serial.printf("  🧭 ความกดอากาศ    : %s hPa\n", fmt(weather.pressure, 0).c_str());
   Serial.printf("  🔆 UV สูงสุดวันนี้   : %s\n", fmt(weather.uvMax).c_str());
   Serial.printf("  🌅 พระอาทิตย์ขึ้น/ตก : %s / %s\n", weather.sunrise.c_str(), weather.sunset.c_str());
+  if (air.valid) {
+    int lv = WeatherApi::pm25Level(air.pm25);
+    Serial.printf("  😷 ฝุ่น PM2.5      : %s มคก./ลบ.ม. (%s) | PM10 %s | AQI %d\n", fmt(air.pm25, 0).c_str(),
+                  WeatherApi::pm25LevelName(lv), fmt(air.pm10, 0).c_str(), air.usAqi);
+  }
+  if (weather.rainNext2h >= RAIN_ALERT_PERCENT)
+    Serial.printf("  ☔ เตือน: โอกาสฝน %d%% ภายใน 2 ชั่วโมง\n", weather.rainNext2h);
+  for (int i = 0; i < 3; i++) {
+    const DayForecast& d = weather.days[i];
+    if (d.date.isEmpty()) continue;
+    Serial.printf("  📅 %s : %s %s/%s °C ฝน %d%%\n", d.date.c_str(), WeatherApi::describe(d.code),
+                  fmt(d.tmax, 0).c_str(), fmt(d.tmin, 0).c_str(), d.rainChance);
+  }
   Serial.println(F("--------------------------------------------------"));
   Serial.printf("  เว็บ: http://%s/  หรือ  http://%s.local/\n", WiFi.localIP().toString().c_str(),
                 DEVICE_HOSTNAME);
@@ -310,12 +324,14 @@ void loop() {
     return;
   }
 
-  if (touch == Display::Touch::Tap) requestWeatherRefresh();
+  if (touch == Display::Touch::Tap) Display::nextPage();
 
   if ((long)(millis() - nextWeatherAt) >= 0) {
     Display::showUpdating();
     Display::setRgb(false, true, false);  // เขียว = กำลังดึงข้อมูล
     bool ok = WeatherApi::fetch(settings.lat, settings.lon, weather);
+    if (ok && !WeatherApi::fetchAir(settings.lat, settings.lon, air))
+      Serial.println("[Air] ดึงค่าฝุ่นไม่สำเร็จ: " + air.error);
     Display::setRgb(!ok, false, false);   // แดงค้าง = ดึงข้อมูลไม่สำเร็จ
     if (ok) {
       static long tzSet = LONG_MIN;
@@ -326,7 +342,17 @@ void loop() {
     } else {
       Serial.println("[Weather] ดึงข้อมูลไม่สำเร็จ: " + weather.error);
     }
-    Display::showWeather(settings, weather, WiFi.localIP().toString());
+    Display::showWeather(settings, weather, air);
+    // เตือนฝนด้วยเสียง: ครั้งเดียวต่อช่วงฝน และไม่ส่งเสียงตอนกลางคืน
+    static bool rainAlerted = false;
+    if (ok && weather.rainNext2h >= RAIN_ALERT_PERCENT) {
+      struct tm t;
+      bool night = getLocalTime(&t, 0) && (t.tm_hour >= NIGHT_START_HOUR || t.tm_hour < NIGHT_END_HOUR);
+      if (!rainAlerted && !night) Display::beep();
+      rainAlerted = true;
+    } else if (ok && weather.rainNext2h >= 0 && weather.rainNext2h < RAIN_ALERT_PERCENT - 20) {
+      rainAlerted = false;
+    }
     printWeatherReport();
     nextWeatherAt = millis() + (ok ? WEATHER_UPDATE_MS : WEATHER_RETRY_MS);
   }

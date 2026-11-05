@@ -1,6 +1,23 @@
 #pragma once
 #include <Arduino.h>
 
+// พยากรณ์รายวัน
+struct DayForecast {
+  String date;          // YYYY-MM-DD
+  int code = -1;
+  float tmax = NAN, tmin = NAN;
+  int rainChance = -1;  // %
+};
+
+// คุณภาพอากาศ (Open-Meteo Air Quality)
+struct AirQuality {
+  bool valid = false;
+  float pm25 = NAN;     // µg/m³
+  float pm10 = NAN;
+  int usAqi = -1;
+  String error;
+};
+
 // ข้อมูลสภาพอากาศปัจจุบัน (จาก Open-Meteo — ฟรี ไม่ต้องใช้ API key)
 struct Weather {
   bool valid = false;
@@ -21,6 +38,8 @@ struct Weather {
   int rainChance = -1;        // % โอกาสฝนตกวันนี้
   float uvMax = NAN;
   String sunrise, sunset;
+  DayForecast days[3];        // พรุ่งนี้ + อีก 2 วัน
+  int rainNext2h = -1;        // % โอกาสฝนสูงสุดใน 2 ชั่วโมงข้างหน้า
   unsigned long fetchedAt = 0;  // millis() ตอนดึงข้อมูล
   String error;
 };
@@ -28,6 +47,13 @@ struct Weather {
 namespace WeatherApi {
 // ดึงสภาพอากาศปัจจุบันตามพิกัด
 bool fetch(double lat, double lon, Weather& out);
+// ดึงค่าฝุ่น PM2.5 / PM10 / AQI
+bool fetchAir(double lat, double lon, AirQuality& out);
+// ระดับคุณภาพอากาศตามเกณฑ์ PM2.5 ของกรมควบคุมมลพิษ: 0 ดีมาก .. 4 มีผลกระทบต่อสุขภาพ, -1 ไม่ทราบ
+int pm25Level(float pm25);
+const char* pm25LevelName(int level);
+// วันในสัปดาห์จาก "YYYY-MM-DD" (0 = อาทิตย์), -1 ถ้าอ่านไม่ได้
+int weekday(const String& date);
 // ค้นหาพิกัดจากชื่อเมือง (ไทย/อังกฤษ) — ได้ชื่อที่แสดงผลกลับมาใน displayName
 bool geocode(const String& city, double& lat, double& lon, String& displayName);
 // คำอธิบายสภาพอากาศภาษาไทย / อีโมจิ จากรหัส WMO

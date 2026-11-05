@@ -2,7 +2,7 @@
 #pragma once
 
 #define APP_NAME            "ESP32 Weather"
-#define APP_VERSION         "3.0.0"
+#define APP_VERSION         "3.1.0"
 #define DEVICE_HOSTNAME     "esp32-weather"        // เข้าเว็บได้ที่ http://esp32-weather.local
 
 // เมืองเริ่มต้น (เปลี่ยนได้ภายหลังจากหน้าเว็บ หรือพิมพ์ใน Serial Monitor)
@@ -17,6 +17,11 @@
 
 // รอบการอัปเดตข้อมูลอากาศ
 #define WEATHER_UPDATE_MS   (10UL * 60UL * 1000UL)   // ทุก 10 นาที
+#define RAIN_ALERT_PERCENT  60                       // เตือนเมื่อโอกาสฝนใน 2 ชม. ถึงค่านี้
+#define BRIGHTNESS_DAY      200
+#define BRIGHTNESS_NIGHT    25                       // ความสว่างตอนกลางคืน (0-255)
+#define NIGHT_START_HOUR    22
+#define NIGHT_END_HOUR      6
 #define WEATHER_RETRY_MS    (30UL * 1000UL)          // ถ้าดึงไม่สำเร็จ ลองใหม่ใน 30 วินาที
 
 // ขา GPIO

@@ -12,6 +12,7 @@
 #define PIN_LED_R 4
 #define PIN_LED_G 16
 #define PIN_LED_B 17
+#define PIN_SPEAKER 26
 
 namespace {
 
@@ -240,7 +241,7 @@ const char* compass(int deg) {
   return deg < 0 ? "-" : d[((deg + 22) % 360) / 45];
 }
 
-void tile(int x, int y, ThaiTextId label, const String& value) {
+void tile(int x, int y, ThaiTextId label, const String& value, uint32_t valueColor = C_TEXT) {
   gfx->fillRoundRect(x, y, 102, 47, 8, c(C_TILE));
   gfx->drawRoundRect(x, y, 102, 47, 8, c(C_BORDER));
   gfx->drawRoundRect(x + 1, y + 1, 100, 45, 7, c(C_BORDER));
@@ -248,7 +249,7 @@ void tile(int x, int y, ThaiTextId label, const String& value) {
   // ตัวเลขใหญ่ขึ้นถ้าใส่ช่องได้ ไม่งั้นใช้ขนาดเล็ก
   gfx->setFont(&fonts::FreeSansBold12pt7b);
   if (gfx->textWidth(value) > 96) gfx->setFont(&fonts::FreeSansBold9pt7b);
-  gfx->setTextColor(c(C_TEXT));
+  gfx->setTextColor(c(valueColor));
   gfx->setTextDatum(bottom_center);
   gfx->drawString(value, x + 51, y + 44);
 }
@@ -284,6 +285,174 @@ void title(const char* text) {
   gfx->drawString(text, 8, 13);
 }
 
+// ---------------- หน้าจอข้อมูลอากาศ ----------------
+constexpr int PAGE_COUNT = 3;
+int page = 0;
+const Settings* curS = nullptr;
+const Weather* curW = nullptr;
+const AirQuality* curA = nullptr;
+unsigned long wakeUntil = 0;
+uint8_t brightnessNow = 0;
+bool showingAlert = false;
+unsigned long alertToggleAt = 0;
+
+uint32_t aqColor(int level) {
+  static const uint32_t cols[] = {0x00FFFF, 0x00FF00, 0xFFFF00, 0xFF0000, 0xFF00FF};
+  return (level >= 0 && level <= 4) ? cols[level] : C_TEXT;
+}
+
+void drawHeader() {
+  gfx->fillRect(0, 0, 320, 26, c(C_HEADER));
+  gfx->setFont(&fonts::FreeSansBold9pt7b);
+  gfx->setTextColor(c(C_TEXT));
+  gfx->setTextDatum(middle_left);
+  String city = curS->city;
+  int comma = city.indexOf(',');
+  if (city.length() > 18 && comma > 0) city = city.substring(0, comma);
+  if (city.length() > 18) city = city.substring(0, 17) + ".";
+  gfx->drawString(city, 8, 13);
+  // จุดบอกหน้า
+  for (int i = 0; i < PAGE_COUNT; i++) {
+    int x = 214 + i * 11;
+    if (i == page) gfx->fillCircle(x, 13, 3, c(C_TEXT));
+    else gfx->drawCircle(x, 13, 3, c(C_TEXT));
+  }
+  lastMinute = -1;
+  drawClock();
+}
+
+void drawDescription() {
+  gfx->fillRect(0, 108, 320, 32, c(C_BG));
+  if (showingAlert) drawThai(TT_RAIN_SOON, 160, 110, C_RAIN, C_BG, 1);
+  else drawThai(thaiForCode(curW->weatherCode), 160, 110, C_SUN, C_BG, 1);
+}
+
+void drawNowPage() {
+  const Weather& w = *curW;
+  drawIcon(w.weatherCode, w.isDay, 62, 72);
+  gfx->setFont(&fonts::FreeSansBold24pt7b);
+  gfx->setTextColor(c(C_TEXT));
+  gfx->setTextDatum(top_left);
+  String t = fmt(w.temp, 1);
+  gfx->drawString(t, 128, 38);
+  int tw = gfx->textWidth(t);
+  degree(128 + tw + 8, 46, 5, C_TEXT);
+  gfx->setFont(&fonts::FreeSansBold12pt7b);
+  gfx->drawString("C", 128 + tw + 16, 40);
+
+  drawThai(TT_FEELS_LIKE, 130, 84, C_LABEL, C_BG);
+  gfx->setFont(&fonts::FreeSansBold9pt7b);
+  gfx->setTextColor(c(C_TEXT));
+  gfx->setTextDatum(top_left);
+  int fx = 130 + thaiWidth(TT_FEELS_LIKE) + 6;
+  String f = fmt(w.feelsLike, 1);
+  gfx->drawString(f, fx, 90);
+  degree(fx + gfx->textWidth(f) + 4, 93, 2, C_TEXT);
+
+  showingAlert = false;
+  drawDescription();
+
+  tile(4, 141, TT_LBL_HUMIDITY, w.humidity < 0 ? "-" : String(w.humidity));
+  tile(109, 141, TT_LBL_WIND, fmt(w.windSpeed, 0) + " " + compass(w.windDir));
+  tile(214, 141, TT_LBL_RAIN, w.rainChance < 0 ? "-" : String(w.rainChance));
+  tile(4, 192, TT_LBL_HILO, fmt(w.tempMax, 0) + "/" + fmt(w.tempMin, 0));
+  // ช่อง PM2.5 แทนที่ UV ถ้ามีข้อมูลฝุ่น (สีตามระดับ)
+  if (curA && curA->valid) {
+    int lv = WeatherApi::pm25Level(curA->pm25);
+    tile(109, 192, TT_LBL_PM25_TILE, fmt(curA->pm25, 0), aqColor(lv));
+  } else {
+    tile(109, 192, TT_LBL_UV, fmt(w.uvMax, 1));
+  }
+  tile(214, 192, TT_LBL_SUN, w.sunrise + "-" + w.sunset);
+}
+
+void drawAirPage() {
+  if (!curA || !curA->valid) {
+    drawThai(TT_FETCH_FAILED, 160, 100, C_WARN, C_BG, 1);
+    gfx->setFont(&fonts::Font2);
+    gfx->setTextColor(c(C_MUTED));
+    gfx->setTextDatum(middle_center);
+    gfx->drawString(curA ? curA->error : String("-"), 160, 140);
+    return;
+  }
+  const AirQuality& a = *curA;
+  int lv = WeatherApi::pm25Level(a.pm25);
+  uint32_t col = aqColor(lv);
+  // ซ้าย: ค่า PM2.5 ตัวใหญ่
+  drawThai(TT_LBL_PM25, 80, 30, C_LABEL, C_BG, 1);
+  gfx->setFont(&fonts::FreeSansBold24pt7b);
+  gfx->setTextColor(c(col));
+  gfx->setTextDatum(middle_center);
+  gfx->drawString(fmt(a.pm25, 0), 80, 80);
+  drawThai(TT_UNIT_UGM3, 80, 106, C_MUTED, C_BG, 1);
+  // ขวา: ระดับ
+  gfx->drawRoundRect(162, 32, 154, 90, 10, c(col));
+  gfx->drawRoundRect(163, 33, 152, 88, 9, c(col));
+  drawThai(TT_AQ_LEVEL, 239, 38, C_MUTED, C_BG, 1);
+  if (lv >= 0) {
+    ThaiTextId lvText = (ThaiTextId)(TT_AQ_0 + lv);
+    drawThai(lvText, 239, 70, col, C_BG, 1);
+    drawThai((ThaiTextId)(TT_AQ_TIP_0 + lv), 160, 128, C_TEXT, C_BG, 1);
+  }
+  tile(4, 170, TT_LBL_PM10, fmt(a.pm10, 0));
+  tile(109, 170, TT_LBL_AQI, a.usAqi < 0 ? String("-") : String(a.usAqi));
+  tile(214, 170, TT_LBL_UV, fmt(curW->uvMax, 1));
+}
+
+void drawForecastPage() {
+  for (int i = 0; i < 3; i++) {
+    const DayForecast& d = curW->days[i];
+    int x = 4 + i * 105, cx = x + 51;
+    gfx->drawRoundRect(x, 31, 102, 206, 8, c(C_BORDER));
+    gfx->drawRoundRect(x + 1, 32, 100, 204, 7, c(C_BORDER));
+    int wd = WeatherApi::weekday(d.date);
+    ThaiTextId name = (i == 0) ? TT_DAY_TOMORROW : (wd >= 0 ? (ThaiTextId)(TT_DAY_0 + wd) : TT_UNKNOWN);
+    drawThai(name, cx, 36, C_SUN, C_BG, 1);
+    if (d.code >= 0) drawIcon(d.code, true, cx, 98);
+    drawThai(TT_LBL_HILO_SHORT, cx, 140, C_LABEL, C_BG, 1);
+    gfx->setFont(&fonts::FreeSansBold12pt7b);
+    gfx->setTextColor(c(C_TEXT));
+    gfx->setTextDatum(top_center);
+    gfx->drawString(fmt(d.tmax, 0) + "/" + fmt(d.tmin, 0), cx, 162);
+    drawThai(TT_LBL_RAIN_SHORT, cx, 186, C_LABEL, C_BG, 1);
+    gfx->setTextColor(c(C_RAIN));
+    gfx->drawString(d.rainChance < 0 ? String("-") : String(d.rainChance) + "%", cx, 208);
+  }
+}
+
+void render() {
+  if (!curS || !curW) return;
+  clearScreen();
+  drawHeader();
+  if (!curW->valid) {
+    drawThai(TT_FETCH_FAILED, 160, 100, C_WARN, C_BG, 1);
+    gfx->setFont(&fonts::Font2);
+    gfx->setTextColor(c(C_MUTED));
+    gfx->setTextDatum(middle_center);
+    gfx->drawString(curW->error, 160, 140);
+  } else if (page == 0) {
+    drawNowPage();
+  } else if (page == 1) {
+    drawAirPage();
+  } else {
+    drawForecastPage();
+  }
+  weatherShown = true;
+}
+
+// กลางคืน (22:00-06:00) หรี่จอ เว้นแต่เพิ่งแตะจอ
+void applyBrightness() {
+  uint8_t target = BRIGHTNESS_DAY;
+  struct tm t;
+  if (getLocalTime(&t, 0) && (t.tm_hour >= NIGHT_START_HOUR || t.tm_hour < NIGHT_END_HOUR) &&
+      millis() > wakeUntil)
+    target = BRIGHTNESS_NIGHT;
+  if (target != brightnessNow) {
+    brightnessNow = target;
+    gfx->setBrightness(target);
+  }
+}
+
 // แตะจอ
 unsigned long touchStart = 0;
 bool longFired = false;
@@ -306,7 +475,8 @@ void begin(uint8_t mode) {
   gfx = new LGFX(mode % MODE_COUNT);
   gfx->init();
   gfx->setRotation(1);  // แนวนอน 320x240
-  gfx->setBrightness(200);
+  gfx->setBrightness(BRIGHTNESS_DAY);
+  brightnessNow = BRIGHTNESS_DAY;
   clearScreen();
 }
 
@@ -372,62 +542,27 @@ void showUpdating() {
   gfx->fillRect(0, 26, 320, 3, c(C_ACCENT));
 }
 
-void showWeather(const Settings& s, const Weather& w, const String& ip) {
-  clearScreen();
-  // ส่วนหัว: ชื่อเมือง + นาฬิกา
-  gfx->fillRect(0, 0, 320, 26, c(C_HEADER));
-  gfx->setFont(&fonts::FreeSansBold9pt7b);
-  gfx->setTextColor(c(C_TEXT));
-  gfx->setTextDatum(middle_left);
-  String city = s.city;
-  if (city.length() > 26) city = city.substring(0, 25) + ".";
-  gfx->drawString(city, 8, 13);
-  lastMinute = -1;
-  drawClock();
+void showWeather(const Settings& s, const Weather& w, const AirQuality& a) {
+  curS = &s;
+  curW = &w;
+  curA = &a;
+  render();
+}
 
-  if (!w.valid) {
-    drawThai(TT_FETCH_FAILED, 160, 100, C_WARN, C_BG, 1);
-    gfx->setFont(&fonts::Font2);
-    gfx->setTextColor(c(C_MUTED));
-    gfx->setTextDatum(middle_center);
-    gfx->drawString(w.error, 160, 140);
-    drawThai(TT_TAP_HINT, 160, 200, C_MUTED, C_BG, 1);
-    weatherShown = true;
-    return;
+void nextPage() {
+  wakeUntil = millis() + 30000;  // กลางคืน: แตะแล้วจอสว่างชั่วคราว
+  applyBrightness();
+  if (!curW) return;
+  page = (page + 1) % PAGE_COUNT;
+  render();
+}
+
+void beep() {
+  for (int i = 0; i < 2; i++) {
+    tone(PIN_SPEAKER, 2400, 120);
+    delay(200);
   }
-
-  // ไอคอน + อุณหภูมิ
-  drawIcon(w.weatherCode, w.isDay, 62, 72);
-  gfx->setFont(&fonts::FreeSansBold24pt7b);
-  gfx->setTextColor(c(C_TEXT));
-  gfx->setTextDatum(top_left);
-  String t = fmt(w.temp, 1);
-  gfx->drawString(t, 128, 38);
-  int tw = gfx->textWidth(t);
-  degree(128 + tw + 8, 46, 5, C_TEXT);
-  gfx->setFont(&fonts::FreeSansBold12pt7b);
-  gfx->drawString("C", 128 + tw + 16, 40);
-
-  drawThai(TT_FEELS_LIKE, 130, 84, C_LABEL, C_BG);
-  gfx->setFont(&fonts::FreeSansBold9pt7b);
-  gfx->setTextColor(c(C_TEXT));
-  gfx->setTextDatum(top_left);
-  int fx = 130 + thaiWidth(TT_FEELS_LIKE) + 6;
-  String f = fmt(w.feelsLike, 1);
-  gfx->drawString(f, fx, 90);
-  degree(fx + gfx->textWidth(f) + 4, 93, 2, C_TEXT);
-
-  // คำอธิบายสภาพอากาศ
-  drawThai(thaiForCode(w.weatherCode), 160, 110, C_SUN, C_BG, 1);
-
-  // ช่องข้อมูล 3 x 2
-  tile(4, 141, TT_LBL_HUMIDITY, w.humidity < 0 ? "-" : String(w.humidity));
-  tile(109, 141, TT_LBL_WIND, fmt(w.windSpeed, 0) + " " + compass(w.windDir));
-  tile(214, 141, TT_LBL_RAIN, w.rainChance < 0 ? "-" : String(w.rainChance));
-  tile(4, 192, TT_LBL_HILO, fmt(w.tempMax, 0) + "/" + fmt(w.tempMin, 0));
-  tile(109, 192, TT_LBL_UV, fmt(w.uvMax, 1));
-  tile(214, 192, TT_LBL_SUN, w.sunrise + "-" + w.sunset);
-  weatherShown = true;
+  noTone(PIN_SPEAKER);
 }
 
 void showDisplayMode(uint8_t mode) {
@@ -442,6 +577,18 @@ void showDisplayMode(uint8_t mode) {
 
 Touch loop() {
   if (weatherShown) drawClock();
+  // สลับคำอธิบายอากาศกับคำเตือนฝนทุก 4 วินาที
+  if (weatherShown && page == 0 && curW && curW->valid && curW->rainNext2h >= RAIN_ALERT_PERCENT &&
+      millis() > alertToggleAt) {
+    alertToggleAt = millis() + 4000;
+    showingAlert = !showingAlert;
+    drawDescription();
+  }
+  static unsigned long lastBrightCheck = 0;
+  if (millis() - lastBrightCheck > 5000) {
+    lastBrightCheck = millis();
+    applyBrightness();
+  }
   int32_t x, y;
   bool pressed = gfx->getTouch(&x, &y) > 0;
   if (pressed) {
