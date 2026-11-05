@@ -1,0 +1,6 @@
+{
+  "name": "esp32-weather-market",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" }
+}
