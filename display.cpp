@@ -241,18 +241,6 @@ const char* compass(int deg) {
   return deg < 0 ? "-" : d[((deg + 22) % 360) / 45];
 }
 
-void tile(int x, int y, ThaiTextId label, const String& value, uint32_t valueColor = C_TEXT) {
-  gfx->fillRoundRect(x, y, 102, 47, 8, c(C_TILE));
-  gfx->drawRoundRect(x, y, 102, 47, 8, c(C_BORDER));
-  gfx->drawRoundRect(x + 1, y + 1, 100, 45, 7, c(C_BORDER));
-  drawThai(label, x + 51, y + 1, C_LABEL, C_TILE, 1);
-  // ตัวเลขใหญ่ขึ้นถ้าใส่ช่องได้ ไม่งั้นใช้ขนาดเล็ก
-  gfx->setFont(&fonts::FreeSansBold12pt7b);
-  if (gfx->textWidth(value) > 96) gfx->setFont(&fonts::FreeSansBold9pt7b);
-  gfx->setTextColor(c(valueColor));
-  gfx->setTextDatum(bottom_center);
-  gfx->drawString(value, x + 51, y + 44);
-}
 
 // สถานะหน้าจอสำหรับนาฬิกา
 bool weatherShown = false;
@@ -286,8 +274,8 @@ void title(const char* text) {
 }
 
 // ---------------- หน้าจอข้อมูลอากาศ ----------------
-constexpr int PAGE_COUNT = 6;
-enum { PAGE_TODAY = 0, PAGE_NOW, PAGE_AIR, PAGE_FORECAST, PAGE_GOLD, PAGE_SET };
+constexpr int PAGE_COUNT = 7;
+enum { PAGE_TODAY = 0, PAGE_NOW, PAGE_PM, PAGE_FORECAST, PAGE_HEAT, PAGE_GOLD, PAGE_SET };
 int page = PAGE_TODAY;
 const Market* curM = nullptr;
 constexpr uint32_t C_UP = 0x00FF00;
@@ -310,123 +298,17 @@ void drawHeader() {
   gfx->setFont(&fonts::FreeSansBold9pt7b);
   gfx->setTextColor(c(C_TEXT));
   gfx->setTextDatum(middle_left);
-  if (page == PAGE_TODAY || page == PAGE_GOLD || page == PAGE_SET) {
-    ThaiTextId title = page == PAGE_TODAY ? TT_TITLE_TODAY : page == PAGE_GOLD ? TT_TITLE_GOLD : TT_TITLE_SET;
-    drawThai(title, 8, 2, C_TEXT, C_HEADER);
-  } else {
-    String city = curS->city;
-    int comma = city.indexOf(',');
-    if (city.length() > 15 && comma > 0) city = city.substring(0, comma);
-    if (city.length() > 15) city = city.substring(0, 14) + ".";
-    gfx->drawString(city, 8, 13);
-  }
+  static const ThaiTextId TITLES[PAGE_COUNT] = {TT_TITLE_TODAY, TT_TITLE_NOW,  TT_TITLE_PM, TT_TITLE_FORECAST,
+                                                TT_TITLE_HEAT,  TT_TITLE_GOLD, TT_TITLE_SET};
+  drawThai(TITLES[page], 8, 2, C_TEXT, C_HEADER);
   // จุดบอกหน้า
   for (int i = 0; i < PAGE_COUNT; i++) {
-    int x = 182 + i * 10;
+    int x = 160 + i * 10;
     if (i == page) gfx->fillCircle(x, 13, 3, c(C_TEXT));
     else gfx->drawCircle(x, 13, 3, c(C_TEXT));
   }
   lastMinute = -1;
   drawClock();
-}
-
-void drawDescription() {
-  gfx->fillRect(0, 108, 320, 32, c(C_BG));
-  if (showingAlert) drawThai(TT_RAIN_SOON, 160, 110, C_RAIN, C_BG, 1);
-  else drawThai(thaiForCode(curW->weatherCode), 160, 110, C_SUN, C_BG, 1);
-}
-
-void drawNowPage() {
-  const Weather& w = *curW;
-  drawIcon(w.weatherCode, w.isDay, 62, 72);
-  gfx->setFont(&fonts::FreeSansBold24pt7b);
-  gfx->setTextColor(c(C_TEXT));
-  gfx->setTextDatum(top_left);
-  String t = fmt(w.temp, 1);
-  gfx->drawString(t, 128, 38);
-  int tw = gfx->textWidth(t);
-  degree(128 + tw + 8, 46, 5, C_TEXT);
-  gfx->setFont(&fonts::FreeSansBold12pt7b);
-  gfx->drawString("C", 128 + tw + 16, 40);
-
-  drawThai(TT_FEELS_LIKE, 130, 84, C_LABEL, C_BG);
-  gfx->setFont(&fonts::FreeSansBold9pt7b);
-  gfx->setTextColor(c(C_TEXT));
-  gfx->setTextDatum(top_left);
-  int fx = 130 + thaiWidth(TT_FEELS_LIKE) + 6;
-  String f = fmt(w.feelsLike, 1);
-  gfx->drawString(f, fx, 90);
-  degree(fx + gfx->textWidth(f) + 4, 93, 2, C_TEXT);
-
-  showingAlert = false;
-  drawDescription();
-
-  tile(4, 141, TT_LBL_HUMIDITY, w.humidity < 0 ? "-" : String(w.humidity));
-  tile(109, 141, TT_LBL_WIND, fmt(w.windSpeed, 0) + " " + compass(w.windDir));
-  tile(214, 141, TT_LBL_RAIN, w.rainChance < 0 ? "-" : String(w.rainChance));
-  tile(4, 192, TT_LBL_HILO, fmt(w.tempMax, 0) + "/" + fmt(w.tempMin, 0));
-  // ช่อง PM2.5 แทนที่ UV ถ้ามีข้อมูลฝุ่น (สีตามระดับ)
-  if (curA && curA->valid) {
-    int lv = WeatherApi::pm25Level(curA->pm25);
-    tile(109, 192, TT_LBL_PM25_TILE, fmt(curA->pm25, 0), aqColor(lv));
-  } else {
-    tile(109, 192, TT_LBL_UV, fmt(w.uvMax, 1));
-  }
-  tile(214, 192, TT_LBL_SUN, w.sunrise + "-" + w.sunset);
-}
-
-void drawAirPage() {
-  if (!curA || !curA->valid) {
-    drawThai(TT_FETCH_FAILED, 160, 100, C_WARN, C_BG, 1);
-    gfx->setFont(&fonts::Font2);
-    gfx->setTextColor(c(C_MUTED));
-    gfx->setTextDatum(middle_center);
-    gfx->drawString(curA ? curA->error : String("-"), 160, 140);
-    return;
-  }
-  const AirQuality& a = *curA;
-  int lv = WeatherApi::pm25Level(a.pm25);
-  uint32_t col = aqColor(lv);
-  // ซ้าย: ค่า PM2.5 ตัวใหญ่
-  drawThai(TT_LBL_PM25, 80, 30, C_LABEL, C_BG, 1);
-  gfx->setFont(&fonts::FreeSansBold24pt7b);
-  gfx->setTextColor(c(col));
-  gfx->setTextDatum(middle_center);
-  gfx->drawString(fmt(a.pm25, 0), 80, 80);
-  drawThai(TT_UNIT_UGM3, 80, 106, C_MUTED, C_BG, 1);
-  // ขวา: ระดับ
-  gfx->drawRoundRect(162, 32, 154, 90, 10, c(col));
-  gfx->drawRoundRect(163, 33, 152, 88, 9, c(col));
-  drawThai(TT_AQ_LEVEL, 239, 38, C_MUTED, C_BG, 1);
-  if (lv >= 0) {
-    ThaiTextId lvText = (ThaiTextId)(TT_AQ_0 + lv);
-    drawThai(lvText, 239, 70, col, C_BG, 1);
-    drawThai((ThaiTextId)(TT_AQ_TIP_0 + lv), 160, 128, C_TEXT, C_BG, 1);
-  }
-  tile(4, 170, TT_LBL_PM10, fmt(a.pm10, 0));
-  tile(109, 170, TT_LBL_AQI, a.usAqi < 0 ? String("-") : String(a.usAqi));
-  tile(214, 170, TT_LBL_UV, fmt(curW->uvMax, 1));
-}
-
-void drawForecastPage() {
-  for (int i = 0; i < 3; i++) {
-    const DayForecast& d = curW->days[i];
-    int x = 4 + i * 105, cx = x + 51;
-    gfx->drawRoundRect(x, 31, 102, 206, 8, c(C_BORDER));
-    gfx->drawRoundRect(x + 1, 32, 100, 204, 7, c(C_BORDER));
-    int wd = WeatherApi::weekday(d.date);
-    ThaiTextId name = (i == 0) ? TT_DAY_TOMORROW : (wd >= 0 ? (ThaiTextId)(TT_DAY_0 + wd) : TT_UNKNOWN);
-    drawThai(name, cx, 36, C_SUN, C_BG, 1);
-    if (d.code >= 0) drawIcon(d.code, true, cx, 98);
-    drawThai(TT_LBL_HILO_SHORT, cx, 140, C_LABEL, C_BG, 1);
-    gfx->setFont(&fonts::FreeSansBold12pt7b);
-    gfx->setTextColor(c(C_TEXT));
-    gfx->setTextDatum(top_center);
-    gfx->drawString(fmt(d.tmax, 0) + "/" + fmt(d.tmin, 0), cx, 162);
-    drawThai(TT_LBL_RAIN_SHORT, cx, 186, C_LABEL, C_BG, 1);
-    gfx->setTextColor(c(C_RAIN));
-    gfx->drawString(d.rainChance < 0 ? String("-") : String(d.rainChance) + "%", cx, 208);
-  }
 }
 
 // ---------- ตัวช่วยตัวเลข ----------
@@ -655,11 +537,260 @@ void drawSetPage() {
   gfx->drawString(withCommas(m.setPrev, 2), 312, 84);
 }
 
+// ---------- ตัวช่วยของหน้าใหม่ ----------
+void chip(ThaiTextId text, uint32_t col, int xRight, int y) {
+  int w = thaiWidth(text) + 16;
+  gfx->drawRoundRect(xRight - w, y, w, 26, 8, c(col));
+  drawThai(text, xRight - w / 2, y + 2, col, C_BG, 1);
+}
+void hline(int y) { gfx->drawFastHLine(8, y, 304, c(C_BORDER)); }
+String hh(int hour) {
+  char b[6];
+  snprintf(b, sizeof(b), "%02d:00", ((hour % 24) + 24) % 24);
+  return b;
+}
+void valueCell(int cx, int y, ThaiTextId label, const String& value, uint32_t col, const GFXfont* font) {
+  drawThai(label, cx, y, C_LABEL, C_BG, 1);
+  gfx->setFont(font);
+  gfx->setTextColor(c(col));
+  gfx->setTextDatum(top_center);
+  gfx->drawString(value, cx, y + 22);
+}
+
+void drawDescription() {
+  gfx->fillRect(100, 82, 220, 28, c(C_BG));
+  ThaiTextId small = (ThaiTextId)(thaiForCode(curW->weatherCode) - TT_CLEAR + TT_DS_CLEAR);
+  if (showingAlert) drawThai(TT_RAIN_SOON_S, 100, 84, C_RAIN, C_BG);
+  else drawThai(small, 100, 84, C_SUN, C_BG);
+}
+
+// ---------- หน้า 2: อากาศตอนนี้ ----------
+void drawNowPage() {
+  const Weather& w = *curW;
+  drawIcon(w.weatherCode, w.isDay, 50, 68);
+  gfx->setFont(&fonts::FreeSansBold24pt7b);
+  gfx->setTextColor(c(C_TEXT));
+  gfx->setTextDatum(top_left);
+  String t = fmt(w.temp, 1);
+  gfx->drawString(t, 100, 32);
+  int tw = gfx->textWidth(t);
+  degree(100 + tw + 8, 40, 5, C_TEXT);
+  gfx->setFont(&fonts::FreeSansBold12pt7b);
+  gfx->drawString("C", 100 + tw + 16, 34);
+  drawThai(TT_LBL_HILO_SHORT, 276, 32, C_LABEL, C_BG, 1);
+  gfx->setTextDatum(top_center);
+  gfx->drawString(fmt(w.tempMax, 0) + "/" + fmt(w.tempMin, 0), 276, 54);
+  showingAlert = false;
+  drawDescription();
+  hline(112);
+  gfx->drawFastVLine(160, 116, 120, c(C_BORDER));
+  hline(174);
+  const GFXfont* big = &fonts::FreeSansBold18pt7b;
+  String fl = fmt(w.feelsLike, 0);
+  valueCell(80, 116, TT_LBL_FEELS_S, fl, C_SUN, big);
+  degree(80 + gfx->textWidth(fl) / 2 + 7, 144, 4, C_SUN);
+  valueCell(240, 116, TT_LBL_HUMID_S, w.humidity < 0 ? String("-") : String(w.humidity) + "%", C_TEXT, big);
+  valueCell(80, 178, TT_LBL_RAIN_SHORT, w.rainChance < 0 ? String("-") : String(w.rainChance) + "%", C_RAIN, big);
+  valueCell(240, 178, TT_LBL_WIND_S, fmt(w.windSpeed, 0) + " " + compass(w.windDir), C_TEXT, big);
+}
+
+// ---------- หน้า 3: ฝุ่น PM2.5 ----------
+void drawPmPage() {
+  if (!curA || !curA->valid) {
+    drawThai(TT_FETCH_FAILED, 160, 100, C_WARN, C_BG, 1);
+    return;
+  }
+  const AirQuality& a = *curA;
+  int lv = WeatherApi::pm25Level(a.pm25);
+  uint32_t col = aqColor(lv);
+  gfx->setFont(&fonts::FreeSansBold9pt7b);
+  gfx->setTextColor(c(C_LABEL));
+  gfx->setTextDatum(top_left);
+  gfx->drawString("PM2.5", 8, 32);
+  gfx->setFont(&fonts::FreeSansBold24pt7b);
+  gfx->setTextColor(c(col));
+  String v = fmt(a.pm25, 0);
+  gfx->drawString(v, 8, 50);
+  drawThai(TT_UNIT_UGM3, 8 + gfx->textWidth(v) + 8, 72, C_TEXT, C_BG);
+  if (lv >= 0) {
+    ThaiTextId lvText = (ThaiTextId)(TT_AQ_0 + lv);
+    int w = thaiWidth(lvText) + 16;
+    gfx->drawRoundRect(312 - w, 30, w, THAI_TEXTS[lvText].h + 6, 8, c(col));
+    drawThai(lvText, 312 - w / 2, 33, col, C_BG, 1);
+    ThaiTextId tip = (ThaiTextId)(TT_AQ_TIP_0 + lv);
+    drawThai(tip, 312 - thaiWidth(tip), 96, C_TEXT, C_BG);
+  }
+  // กราฟฝุ่น 12 ชม. ข้างหน้า
+  const int gx = 8, gy = 124, gw = 304, gh = 76;
+  gfx->drawRect(gx, gy, gw, gh, c(C_BORDER));
+  if (a.hPmCount > 1) {
+    float hi = 10;
+    int lowest = 0;
+    for (int i = 0; i < a.hPmCount; i++) {
+      hi = max(hi, a.hPm[i]);
+      if (a.hPm[i] < a.hPm[lowest]) lowest = i;
+    }
+    int bw = (gw - 12) / a.hPmCount;
+    for (int i = 0; i < a.hPmCount; i++) {
+      int h = (int)(a.hPm[i] / hi * (gh - 26));
+      gfx->fillRect(gx + 6 + i * bw, gy + gh - 4 - h, bw - 8, h, c(aqColor(WeatherApi::pm25Level(a.hPm[i]))));
+    }
+    drawThai(TT_NEXT12_S, gx + gw - 6 - thaiWidth(TT_NEXT12_S), gy + 3, C_LABEL, C_BG);
+    drawThai(TT_PM_LOWEST, 312 - 52 - thaiWidth(TT_PM_LOWEST), 206, C_UP, C_BG);
+    gfx->setFont(&fonts::FreeSansBold9pt7b);
+    gfx->setTextColor(c(C_UP));
+    gfx->setTextDatum(top_right);
+    gfx->drawString(hh(a.hPmHour[lowest]), 312, 210);
+  }
+  gfx->setFont(&fonts::FreeSansBold9pt7b);
+  gfx->setTextDatum(top_left);
+  gfx->setTextColor(c(C_LABEL));
+  gfx->drawString("PM10", 8, 210);
+  gfx->setTextColor(c(C_TEXT));
+  gfx->drawString(fmt(a.pm10, 0), 60, 210);
+  gfx->setTextColor(c(C_LABEL));
+  gfx->drawString("AQI", 104, 210);
+  gfx->setTextColor(c(C_TEXT));
+  gfx->drawString(a.usAqi < 0 ? String("-") : String(a.usAqi), 142, 210);
+}
+
+// ---------- หน้า 4: พยากรณ์ ----------
+void drawForecastPage() {
+  const Weather& w = *curW;
+  int n = min(w.hCount, 12);
+  drawThai(TT_NEXT12, 8, 28, C_SUN, C_BG);
+  // ช่วงที่โอกาสฝนสูง (>= 60%)
+  int r0 = -1, r1 = -1;
+  for (int i = 0; i < n; i++) {
+    if (w.hRain[i] >= 60) { if (r0 < 0) r0 = i; r1 = i; }
+    else if (r0 >= 0) break;
+  }
+  gfx->setFont(&fonts::FreeSansBold9pt7b);
+  gfx->setTextDatum(top_right);
+  if (r0 >= 0) {
+    String win = hh(w.hHour[r0]) + "-" + hh(w.hHour[r1] + 1);
+    gfx->setTextColor(c(C_RAIN));
+    gfx->drawString(win, 312, 31);
+    drawThai(TT_RAIN_WINDOW, 312 - gfx->textWidth(win) - 6 - thaiWidth(TT_RAIN_WINDOW), 28, C_RAIN, C_BG);
+  } else {
+    drawThai(TT_RAIN_LOW, 312 - thaiWidth(TT_RAIN_LOW), 28, C_UP, C_BG);
+  }
+  const int gx = 8, gy = 52, gw = 304, gh = 76;
+  gfx->drawRect(gx, gy, gw, gh, c(C_BORDER));
+  if (n > 1) {
+    float lo = 99, hi = -99;
+    for (int i = 0; i < n; i++) if (!isnan(w.hTemp[i])) { lo = min(lo, w.hTemp[i]); hi = max(hi, w.hTemp[i]); }
+    if (hi - lo < 2) { hi += 1; lo -= 1; }
+    int step = (gw - 12) / n;
+    auto xOf = [&](int i) { return gx + 6 + i * step + step / 2; };
+    auto yOf = [&](float t) { return gy + 14 + (int)((hi - t) / (hi - lo) * (gh - 34)); };
+    for (int i = 0; i < n; i++) {
+      int h = max(0, w.hRain[i]) * (gh - 10) / 100 * 7 / 10;
+      gfx->fillRect(xOf(i) - step / 2 + 4, gy + gh - 3 - h, step - 8, h, c(w.hRain[i] >= 60 ? C_RAIN : C_BORDER));
+    }
+    for (int i = 1; i < n; i++) {
+      gfx->drawLine(xOf(i - 1), yOf(w.hTemp[i - 1]), xOf(i), yOf(w.hTemp[i]), c(C_SUN));
+      gfx->drawLine(xOf(i - 1), yOf(w.hTemp[i - 1]) + 1, xOf(i), yOf(w.hTemp[i]) + 1, c(C_SUN));
+    }
+    gfx->setFont(&fonts::Font2);
+    gfx->setTextDatum(bottom_center);
+    gfx->setTextColor(c(C_SUN));
+    for (int i = 0; i < n; i += 3) gfx->drawString(fmt(w.hTemp[i], 0), xOf(i), yOf(w.hTemp[i]) - 2);
+    gfx->setTextDatum(top_center);
+    gfx->setTextColor(c(C_TEXT));
+    for (int i = 0; i < n; i += 4) gfx->drawString(hh(w.hHour[i]), xOf(i), gy + gh + 1);
+  }
+  // 3 วันข้างหน้า
+  for (int i = 0; i < 3; i++) {
+    const DayForecast& d = w.days[i];
+    int cx = 56 + i * 104;
+    int wd = WeatherApi::weekday(d.date);
+    ThaiTextId name = (i == 0) ? TT_DAY_TOMORROW : (wd >= 0 ? (ThaiTextId)(TT_DAY_0 + wd) : TT_UNKNOWN);
+    drawThai(name, cx, 146, C_SUN, C_BG, 1);
+    gfx->setFont(&fonts::FreeSansBold12pt7b);
+    gfx->setTextColor(c(C_TEXT));
+    gfx->setTextDatum(top_center);
+    gfx->drawString(fmt(d.tmax, 0) + "/" + fmt(d.tmin, 0), cx, 175);
+    drawThai(TT_MINI_RAIN, cx - 4 - thaiWidth(TT_MINI_RAIN), 206, C_LABEL, C_BG);
+    gfx->setFont(&fonts::FreeSansBold9pt7b);
+    gfx->setTextColor(c(C_RAIN));
+    gfx->setTextDatum(top_left);
+    gfx->drawString(d.rainChance < 0 ? String("-") : String(d.rainChance) + "%", cx, 210);
+    if (i > 0) gfx->drawFastVLine(4 + i * 104, 148, 88, c(C_BORDER));
+  }
+}
+
+// ---------- หน้า 5: แดดและความร้อน ----------
+uint32_t heatColor(int lv) {
+  static const uint32_t cols[] = {0x00FF00, 0xFFFF00, 0xFF0000, 0xFF0000, 0xFF00FF};
+  return (lv >= 0 && lv <= 4) ? cols[lv] : C_TEXT;
+}
+void drawHeatPage() {
+  const Weather& w = *curW;
+  // ดัชนีความร้อน
+  drawThai(TT_HEAT_TITLE, 8, 28, C_SUN, C_BG);
+  int hl = WeatherApi::heatLevel(w.feelsLike);
+  uint32_t hc = heatColor(hl);
+  gfx->setFont(&fonts::FreeSansBold24pt7b);
+  gfx->setTextColor(c(hc));
+  gfx->setTextDatum(top_left);
+  String fv = fmt(w.feelsLike, 0);
+  gfx->drawString(fv, 8, 52);
+  degree(8 + gfx->textWidth(fv) + 8, 60, 5, hc);
+  if (hl >= 0) {
+    chip((ThaiTextId)(TT_HEAT_0 + hl), hc, 312, 52);
+    ThaiTextId tip = (ThaiTextId)(TT_HEAT_TIP_0 + hl);
+    drawThai(tip, 312 - thaiWidth(tip), 84, C_TEXT, C_BG);
+  }
+  hline(110);
+  // รังสี UV (ชั่วโมงนี้)
+  float uv = w.hCount > 0 && !isnan(w.hUv[0]) ? w.hUv[0] : w.uvMax;
+  drawThai(TT_UV_TITLE, 8, 112, C_SUN, C_BG);
+  int ul = WeatherApi::uvLevel(uv);
+  uint32_t uc = heatColor(ul);
+  gfx->setFont(&fonts::FreeSansBold24pt7b);
+  gfx->setTextColor(c(uc));
+  gfx->setTextDatum(top_left);
+  String uvs = fmt(uv, 0);
+  gfx->drawString(uvs, 8, 134);
+  int ux = 8 + gfx->textWidth(uvs) + 12;
+  if (!isnan(uv) && uv >= 3) {  // เวลาโดยประมาณที่ผิวคนไทยทั่วไปเริ่มไหม้ ~ 200/UV นาที
+    drawThai(TT_BURN_IN, ux, 150, C_TEXT, C_BG);
+    ux += thaiWidth(TT_BURN_IN) + 5;
+    gfx->setFont(&fonts::FreeSansBold9pt7b);
+    gfx->setTextColor(c(C_TEXT));
+    String m = String((int)roundf(200.0f / uv));
+    gfx->drawString(m, ux, 153);
+    drawThai(TT_MINUTES, ux + gfx->textWidth(m) + 4, 150, C_TEXT, C_BG);
+  }
+  if (ul >= 0) {
+    chip((ThaiTextId)(TT_UV_0 + ul), uc, 312, 134);
+    ThaiTextId tip = (ThaiTextId)(TT_UV_TIP_0 + ul);
+    drawThai(tip, 312 - thaiWidth(tip), 170, C_TEXT, C_BG);
+  }
+  hline(194);
+  // ช่วงแดดแรง (UV >= 6) ใน 24 ชม. ข้างหน้า
+  int s0 = -1, s1 = -1;
+  for (int i = 0; i < w.hCount; i++) {
+    if (!isnan(w.hUv[i]) && w.hUv[i] >= 6) { if (s0 < 0) s0 = i; s1 = i; }
+    else if (s0 >= 0) break;
+  }
+  if (s0 >= 0) {
+    drawThai(TT_AVOID_SUN, 8, 200, C_LABEL, C_BG);
+    gfx->setFont(&fonts::FreeSansBold12pt7b);
+    gfx->setTextColor(c(C_SUN));
+    gfx->setTextDatum(top_right);
+    gfx->drawString(hh(w.hHour[s0]) + " - " + hh(w.hHour[s1] + 1), 312, 202);
+  } else {
+    drawThai(TT_SUN_OK, 8, 200, C_UP, C_BG);
+  }
+}
+
 void render() {
   if (!curS || !curW) return;
   clearScreen();
   drawHeader();
-  if (!curW->valid && (page == PAGE_NOW || page == PAGE_AIR || page == PAGE_FORECAST)) {
+  if (!curW->valid && (page == PAGE_NOW || page == PAGE_PM || page == PAGE_FORECAST || page == PAGE_HEAT)) {
     drawThai(TT_FETCH_FAILED, 160, 100, C_WARN, C_BG, 1);
     gfx->setFont(&fonts::Font2);
     gfx->setTextColor(c(C_MUTED));
@@ -667,10 +798,12 @@ void render() {
     gfx->drawString(curW->error, 160, 140);
   } else if (page == PAGE_NOW) {
     drawNowPage();
-  } else if (page == PAGE_AIR) {
-    drawAirPage();
+  } else if (page == PAGE_PM) {
+    drawPmPage();
   } else if (page == PAGE_FORECAST) {
     drawForecastPage();
+  } else if (page == PAGE_HEAT) {
+    drawHeatPage();
   }
   if (page == PAGE_TODAY) drawTodayPage();
   else if (page == PAGE_GOLD) drawGoldPage();

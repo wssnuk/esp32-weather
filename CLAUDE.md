@@ -8,8 +8,10 @@ reply in Thai and keep user-facing strings (Serial, web UI) in Thai.
 - Weather source: Open-Meteo forecast + geocoding APIs over HTTPS (no API key).
 - Two modes: setup portal (AP "ESP32-Weather-Setup" + captive DNS) and dashboard (STA + mDNS).
 - Wi-Fi can also be provisioned over USB with Improv Serial (improv.cpp) from the web installer.
-- Screen has 6 pages (tap cycles): today (big clock + Thai date + mini weather/market) / now / air quality
-  (Open-Meteo air-quality API, Thai PCD PM2.5 levels) / 3-day forecast / Thai gold price / SET index.
+- Screen has 7 pages (tap cycles): today (big clock + Thai date + mini weather/market) / now / PM2.5 (with 12 h
+  hourly PM forecast, Thai PCD levels) / forecast (12 h hourly temp+rain chart + 3 days) / sun & heat (heat index
+  from apparent temperature with Thai DoH levels, UV now with WHO levels, burn time ~200/UV min, UV>=6 window) /
+  Thai gold / SET. UI style: blue header bar, big numbers, cyan labels, yellow section titles, thin blue dividers.
 - Market data (gold, SET, SET50, XAU, USD/THB) is collected by server/api/market.js, run by
   .github/workflows/market.yml every 10 min on weekdays, and published as market.json on the `market-data`
   branch; the board reads it from raw.githubusercontent.com (MARKET_DATA_URL). Gold: goldtraders.or.th blocks

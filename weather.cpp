@@ -66,7 +66,7 @@ bool fetch(double lat, double lon, Weather& w) {
                "wind_direction_10m"
                "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,"
                "uv_index_max,sunrise,sunset"
-               "&hourly=precipitation_probability&forecast_hours=3"
+               "&hourly=temperature_2m,precipitation_probability,uv_index&forecast_hours=24"
                "&timezone=auto&forecast_days=4";
   JsonDocument doc;
   String err;
@@ -108,9 +108,18 @@ bool fetch(double lat, double lon, Weather& w) {
     day.rainChance = n(d["precipitation_probability_max"][i + 1]);
   }
   w.rainNext2h = -1;
-  JsonArrayConst hp = doc["hourly"]["precipitation_probability"];
-  for (size_t i = 0; i < hp.size() && i < 3; i++)
-    if (!hp[i].isNull()) w.rainNext2h = max(w.rainNext2h, hp[i].as<int>());
+  JsonObjectConst hr = doc["hourly"];
+  JsonArrayConst ht = hr["time"];
+  w.hCount = 0;
+  for (size_t i = 0; i < ht.size() && i < 24; i++) {
+    String tm = ht[i] | "";
+    w.hHour[i] = tm.length() >= 13 ? tm.substring(11, 13).toInt() : -1;
+    w.hTemp[i] = f(hr["temperature_2m"][i]);
+    w.hRain[i] = n(hr["precipitation_probability"][i]);
+    w.hUv[i] = f(hr["uv_index"][i]);
+    w.hCount = i + 1;
+    if (i < 3 && w.hRain[i] >= 0) w.rainNext2h = max(w.rainNext2h, w.hRain[i]);
+  }
   w.fetchedAt = millis();
   w.error = "";
   w.valid = true;
@@ -118,13 +127,23 @@ bool fetch(double lat, double lon, Weather& w) {
 }
 
 bool fetchAir(double lat, double lon, AirQuality& a) {
-  String url = "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + String(lat, 4) +
-               "&longitude=" + String(lon, 4) + "&current=pm2_5,pm10,us_aqi&timezone=auto";
+  String base = "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + String(lat, 4) +
+                "&longitude=" + String(lon, 4) + "&current=pm2_5,pm10,us_aqi&timezone=auto";
   JsonDocument doc;
   String err;
-  if (!getJson(url, doc, err)) {
+  // ขอค่าฝุ่นรายชั่วโมงด้วย ถ้าเซิร์ฟเวอร์ไม่รับ ให้ลองแบบไม่มีรายชั่วโมง
+  if (!getJson(base + "&hourly=pm2_5&forecast_hours=12", doc, err) && !getJson(base, doc, err)) {
     a.error = err;
     return false;
+  }
+  a.hPmCount = 0;
+  JsonArrayConst pt = doc["hourly"]["time"];
+  for (size_t i = 0; i < pt.size() && i < 12; i++) {
+    float v = f(doc["hourly"]["pm2_5"][i]);
+    if (isnan(v)) continue;
+    String tm = pt[i] | "";
+    a.hPmHour[a.hPmCount] = tm.length() >= 13 ? tm.substring(11, 13).toInt() : -1;
+    a.hPm[a.hPmCount++] = v;
   }
   JsonObjectConst c = doc["current"];
   if (c.isNull()) {
@@ -145,6 +164,24 @@ int pm25Level(float v) {
   if (v <= 25) return 1;
   if (v <= 37.5) return 2;
   if (v <= 75) return 3;
+  return 4;
+}
+
+int heatLevel(float t) {
+  if (isnan(t)) return -1;
+  if (t < 27) return 0;
+  if (t <= 32) return 1;
+  if (t <= 41) return 2;
+  if (t <= 54) return 3;
+  return 4;
+}
+
+int uvLevel(float u) {
+  if (isnan(u)) return -1;
+  if (u < 3) return 0;
+  if (u < 6) return 1;
+  if (u < 8) return 2;
+  if (u < 11) return 3;
   return 4;
 }
 

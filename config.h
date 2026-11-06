@@ -2,7 +2,7 @@
 #pragma once
 
 #define APP_NAME            "ESP32 Weather"
-#define APP_VERSION         "3.2.0"
+#define APP_VERSION         "3.3.0"
 #define DEVICE_HOSTNAME     "esp32-weather"        // เข้าเว็บได้ที่ http://esp32-weather.local
 
 // เมืองเริ่มต้น (เปลี่ยนได้ภายหลังจากหน้าเว็บ หรือพิมพ์ใน Serial Monitor)

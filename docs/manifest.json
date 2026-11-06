@@ -1,6 +1,6 @@
 {
   "name": "ESP32 Weather (ESP32-2432S028)",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "new_install_prompt_erase": true,
   "new_install_improv_wait_time": 15,
   "builds": [
