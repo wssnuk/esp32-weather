@@ -4,7 +4,7 @@
 - ถ้าบริเวณนั้นไม่มีเรดาร์ครอบคลุม ใช้แผนที่ฝนจากแบบจำลอง Open-Meteo แทน
 - วิเคราะห์ระยะ/ทิศของกลุ่มฝนที่ใกล้ที่สุด ความเร็ว และเวลาที่น่าจะถึง
 ผลลัพธ์: out/radar/f0..f3.jpg (224x204) + out/radar/radar.json
-แผนที่พื้นหลัง: Esri World Dark Gray Base (เก็บแคชไว้ใน radar/base.png ของ branch market-data)
+แผนที่พื้นหลัง: Esri World Dark Gray Base (เก็บแคชไว้ใน radar/base_v2.png ของ branch market-data)
 """
 import io, json, math, os, sys, time, urllib.request
 from PIL import Image, ImageDraw, ImageFilter
@@ -65,7 +65,7 @@ def basemap(cache_path):
         img = Image.open(cache_path).convert('RGB')
         if img.size == (W, H):
             return img
-    z = 10
+    z = 9
     img, cx, cy = mosaic('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', z, 'RGB')
     m = crop_scaled(img, cx, cy, z)
     # โทนน้ำเงินเข้มให้เข้ากับธีมบนบอร์ด และสว่างขึ้นเล็กน้อย

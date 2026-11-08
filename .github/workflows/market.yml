@@ -32,8 +32,8 @@ jobs:
         run: |
           pip install --quiet pillow
           mkdir -p /tmp/radar
-          curl -sfL -o /tmp/radar/base.png "https://raw.githubusercontent.com/${{ github.repository }}/market-data/radar/base.png" || rm -f /tmp/radar/base.png
-          RADAR_BASEMAP_CACHE=/tmp/radar/base.png python server/radar.py /tmp/radar
+          curl -sfL -o /tmp/radar/base_v2.png "https://raw.githubusercontent.com/${{ github.repository }}/market-data/radar/base_v2.png" || rm -f /tmp/radar/base_v2.png
+          RADAR_BASEMAP_CACHE=/tmp/radar/base_v2.png python server/radar.py /tmp/radar
       - name: Publish to market-data branch
         run: |
           mkdir -p /tmp/out && cd /tmp/out
