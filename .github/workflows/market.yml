@@ -1,4 +1,4 @@
-name: market data
+name: market data and maps
 
 on:
   schedule:
@@ -16,7 +16,7 @@ concurrency:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,11 +24,26 @@ jobs:
           node-version: 20
       - name: Collect market data
         run: node server/collect.mjs /tmp/market.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build Thailand radar and storm satellite maps
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          pip install --quiet pillow
+          mkdir -p /tmp/maps /tmp/mapcache
+          for f in base_th.png base_storm.png; do
+            curl -sfL -o /tmp/mapcache/$f "https://raw.githubusercontent.com/${{ github.repository }}/market-data/maps/$f" || rm -f /tmp/mapcache/$f
+          done
+          MAPS_CACHE=/tmp/mapcache python server/maps.py /tmp/maps
+          cp -n /tmp/mapcache/*.png /tmp/maps/ 2>/dev/null || true
       - name: Publish to market-data branch
         run: |
           mkdir -p /tmp/out && cd /tmp/out
           git init -q -b market-data
           cp /tmp/market.json market.json
-          git add market.json
+          if [ -d /tmp/maps ]; then mkdir -p maps && cp -r /tmp/maps/* maps/; fi
+          git add market.json maps 2>/dev/null || git add market.json
           git -c user.name="market-bot" -c user.email="actions@github.com" commit -q -m "market data $(date -u +%FT%TZ)"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" market-data
