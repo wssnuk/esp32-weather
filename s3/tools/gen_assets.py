@@ -18,15 +18,16 @@ OUT = os.path.join(HERE, 'out')
 SKETCH = os.path.join(HERE, '..', 'esp32-weather-s3')
 os.makedirs(OUT, exist_ok=True)
 
-GOLD = (232, 196, 120, 255)
-MUT = (170, 180, 200, 255)
+GOLD = (250, 214, 140, 255)
+MUT = (200, 210, 228, 255)
 WHITE = (255, 255, 255, 255)
 
 
 # ---------------------------------------------------------------- พื้นหลัง
 def aurora_base():
-    im = grad(W, H, (6, 8, 16), (14, 16, 28)).convert('RGBA')
-    for (cx, cy, rx, ry, c) in [(70, 20, 160, 50, (40, 220, 190, 70)), (260, 10, 140, 45, (120, 110, 255, 60))]:
+    im = grad(W, H, (12, 18, 38), (22, 26, 48)).convert('RGBA')
+    for (cx, cy, rx, ry, c) in [(70, 20, 170, 60, (40, 230, 200, 135)), (260, 10, 150, 55, (130, 120, 255, 120)),
+                                (300, 230, 160, 50, (60, 120, 255, 60))]:
         l = layer(im)
         ImageDraw.Draw(l).ellipse([(cx - rx) * K, (cy - ry) * K, (cx + rx) * K, (cy + ry) * K], fill=c)
         im = Image.alpha_composite(im, l.filter(ImageFilter.GaussianBlur(28 * K)))
@@ -34,10 +35,10 @@ def aurora_base():
 
 
 def gcard(im, box, r=12):
-    return glass(im, box, r=r, fill=(255, 255, 255, 16), line=(232, 196, 120, 70))
+    return glass(im, box, r=r, fill=(255, 255, 255, 30), line=(250, 214, 140, 130))
 
 
-def hline(im, x0, x1, y, col=(232, 196, 120, 70)):
+def hline(im, x0, x1, y, col=(250, 214, 140, 120)):
     l = layer(im)
     ImageDraw.Draw(l).line([(x0 * K, y * K), (x1 * K, y * K)], fill=col, width=K)
     return Image.alpha_composite(im, l)

@@ -150,7 +150,7 @@ void detectTouch() {
 
 // ---------------- สีและตัวช่วย ----------------
 inline uint32_t RGB(uint8_t r, uint8_t g_, uint8_t b) { return ((uint32_t)r << 16) | ((uint32_t)g_ << 8) | b; }
-const uint32_t C_WHITE = RGB(255, 255, 255), C_GOLD = RGB(232, 196, 120), C_MUTED = RGB(170, 180, 200),
+const uint32_t C_WHITE = RGB(255, 255, 255), C_GOLD = RGB(250, 214, 140), C_MUTED = RGB(200, 210, 228),
                C_TEAL = RGB(90, 230, 210), C_RAIN = RGB(120, 190, 255), C_FEEL = RGB(255, 170, 120),
                C_UV = RGB(255, 140, 210), C_RED = RGB(255, 110, 90);
 
