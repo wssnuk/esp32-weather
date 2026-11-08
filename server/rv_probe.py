@@ -1,4 +1,4 @@
-"""ตรวจว่า RainViewer มีข้อมูลเรดาร์บริเวณไทยไหม (ใช้ตอนพัฒนา)"""
+"""ตรวจรูปแบบไทล์ RainViewer / Esri (ใช้ตอนพัฒนา)"""
 import io, json, math, urllib.request
 from PIL import Image
 UA = {'User-Agent': 'esp32-weather-radar/1.0 (+https://github.com/wssnuk/esp32-weather)'}
@@ -7,23 +7,30 @@ def get(u):
         return r.status, r.headers.get('Content-Type'), r.read()
 def tile(lat, lon, z):
     n = 2 ** z
-    x = (lon + 180) / 360 * n
-    y = (1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * n
-    return int(x), int(y)
-st, ct, b = get('https://api.rainviewer.com/public/weather-maps.json')
-meta = json.loads(b)
-print('meta keys', list(meta.keys()), 'radar keys', list(meta['radar'].keys()))
-print('host', meta['host'], 'past', [p['time'] for p in meta['radar']['past']][-3:], 'nowcast', len(meta['radar'].get('nowcast', [])))
-for name, lat, lon in [('Bangkok', 13.75, 100.5), ('ChiangMai', 18.79, 98.98), ('Phuket', 7.88, 98.39), ('Berlin', 52.5, 13.4)]:
-    for z in (5, 6, 7, 8):
-        x, y = tile(lat, lon, z)
-        for kind, url in [('cov', f"{meta['host']}/v2/coverage/0/256/{z}/{x}/{y}/0/0_0.png"),
-                          ('radar', f"{meta['host']}{meta['radar']['past'][-1]['path']}/256/{z}/{x}/{y}/2/1_1.png")]:
-            try:
-                st, ct, b = get(url)
-                im = Image.open(io.BytesIO(b)).convert('RGBA')
-                a = im.getchannel('A')
-                nz = sum(1 for v in a.getdata() if v > 0)
-                print(name, z, kind, st, ct, len(b), 'alpha>0 px', nz, 'center', im.getpixel((128, 128)))
-            except Exception as e:
-                print(name, z, kind, 'ERR', e)
+    return int((lon + 180) / 360 * n), int((1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * n)
+meta = json.loads(get('https://api.rainviewer.com/public/weather-maps.json')[2])
+path = meta['radar']['past'][-1]['path']
+# หาไทล์ z7 แถบไทยที่มีฝนมากสุด
+best = None
+for lat in range(6, 21, 2):
+    for lon in range(97, 106, 2):
+        x, y = tile(lat, lon, 7)
+        st, ct, b = get(f"{meta['host']}{path}/256/7/{x}/{y}/2/1_1.png")
+        nz = sum(1 for v in Image.open(io.BytesIO(b)).convert('RGBA').getchannel('A').getdata() if v)
+        if not best or nz > best[0]: best = (nz, x, y)
+print('best rain tile z7', best)
+nz, x, y = best
+for size in (256, 512):
+    for scheme in (0, 1, 2, 3, 4, 6, 8):
+        try:
+            st, ct, b = get(f"{meta['host']}{path}/{size}/7/{x}/{y}/{scheme}/0_0.png")
+            im = Image.open(io.BytesIO(b)).convert('RGBA')
+            px = [p for p in im.getdata() if p[3]]
+            cols = sorted(set(px))[:6]
+            print('size', size, 'scheme', scheme, st, len(b), im.size, 'rain px', len(px), 'sample', cols)
+        except Exception as e:
+            print('size', size, 'scheme', scheme, 'ERR', e)
+for name, u in [('dark', 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/8/119/200'),
+                ('ref', 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/8/119/200')]:
+    st, ct, b = get(u)
+    print(name, st, ct, len(b), b[:4])
