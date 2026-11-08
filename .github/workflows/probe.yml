@@ -1,4 +1,4 @@
-name: storm probe (dev)
+name: storm probe 2 (dev)
 on: workflow_dispatch
 permissions:
   contents: write
@@ -7,36 +7,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Probe storm data sources
+      - name: Probe satellite and storm tracks
         run: |
           mkdir -p out && cd out
           UA="esp32-weather-s3/1.6 (+https://github.com/wssnuk/esp32-weather)"
-          curl -s -A "$UA" https://api.rainviewer.com/public/weather-maps.json > rv.json
+          for L in Himawari_AHI_Band13_Clean_Infrared Himawari_AHI_Band3_Red_Visible_1km; do
+            for M in GoogleMapsCompatible_Level6 GoogleMapsCompatible_Level7 GoogleMapsCompatible_Level8; do
+              u="https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/$L/default/default/$M/4/7/12.png"
+              c=$(curl -s -A "$UA" -o "${L}_${M}.png" -w "%{http_code} %{content_type} %{size_download}" "$u"); echo "GIBS $L $M -> $c"
+            done
+          done
+          curl -s -A "$UA" "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/wmts.cgi?SERVICE=WMTS&REQUEST=GetCapabilities" -o caps.xml
           python3 - <<'PY'
-          import json, urllib.request
-          m = json.load(open('rv.json'))
-          sat = m.get('satellite', {})
-          print('satellite keys', list(sat.keys()), {k: len(v) for k, v in sat.items()})
-          ir = sat.get('infrared', [])
-          if ir:
-              p = ir[-1]['path']
-              for z, x, y in [(5, 24, 14), (6, 49, 29), (4, 12, 7)]:
-                  u = f"{m['host']}{p}/256/{z}/{x}/{y}/0/0_0.png"
-                  try:
-                      r = urllib.request.urlopen(urllib.request.Request(u, headers={'User-Agent': 'x'}), timeout=20)
-                      b = r.read(); print('sat', z, r.status, r.headers.get('Content-Type'), len(b))
-                      open(f'sat_{z}.png', 'wb').write(b)
-                  except Exception as e: print('sat', z, 'ERR', e)
-          # radar at low zoom
-          p = m['radar']['past'][-1]['path']
-          for z, x, y in [(5, 24, 14), (6, 49, 29)]:
-              u = f"{m['host']}{p}/512/{z}/{x}/{y}/2/1_0.png"
-              try:
-                  r = urllib.request.urlopen(urllib.request.Request(u, headers={'User-Agent': 'x'}), timeout=20)
-                  b = r.read(); print('radar', z, r.status, len(b)); open(f'radar_{z}.png', 'wb').write(b)
-              except Exception as e: print('radar', z, 'ERR', e)
+          import re
+          x = open('caps.xml').read()
+          for m in re.finditer(r'<ows:Identifier>(Himawari[^<]*)</ows:Identifier>', x):
+              i = m.start(); seg = x[i:i+3000]
+              tm = re.search(r'<TileMatrixSet>([^<]*)</TileMatrixSet>', seg); fmt = re.search(r'<Format>([^<]*)</Format>', seg)
+              dflt = re.search(r'<Default>([^<]*)</Default>', seg)
+              print('LAYER', m.group(1), tm and tm.group(1), fmt and fmt.group(1), 'default', dflt and dflt.group(1))
           PY
-          curl -s -A "$UA" "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventlist=TC&alertlevel=green;orange;red" -o gdacs.json; head -c 1500 gdacs.json; echo
-          curl -s -A "$UA" "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/5/14/24" -o imagery.jpg; ls -la
+          curl -s -A "$UA" "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=1001348&episodeid=9" -o geom.json; head -c 1200 geom.json; echo
+          ls -la
           git init -q -b probe-out && git add . && git -c user.name=bot -c user.email=actions@github.com commit -q -m probe
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" probe-out
