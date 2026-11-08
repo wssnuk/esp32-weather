@@ -1,0 +1,23 @@
+name: geo probe (dev)
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe geolocation and Thai reverse geocoding
+        run: |
+          mkdir -p out && cd out
+          UA="esp32-weather-s3/1.4 (+https://github.com/wssnuk/esp32-weather)"
+          curl -s -A "$UA" "https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=13.7244&longitude=100.5296&localityLanguage=th" > bdc_bkk.json
+          curl -s -A "$UA" "https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=18.7883&longitude=98.9853&localityLanguage=th" > bdc_cnx.json
+          curl -s -A "$UA" "https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=14.3532&longitude=100.5689&localityLanguage=th" > bdc_ayu.json
+          curl -s -A "$UA" "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=14.3532&lon=100.5689&zoom=16&addressdetails=1&accept-language=th" > nom_ayu.json
+          curl -s -A "$UA" -H "Content-Type: application/json" -d '{"considerIp":true,"wifiAccessPoints":[]}' "https://api.beacondb.net/v1/geolocate" > beacon.json
+          curl -s -A "$UA" "https://ipwho.is/?lang=en" > ipwho.json
+          curl -s -A "$UA" "http://ip-api.com/json/?fields=status,lat,lon,city,regionName,country" > ipapi.json
+          for f in *.json; do echo "== $f"; head -c 3000 $f; echo; done
+          git init -q -b probe-out && git add . && git -c user.name=bot -c user.email=actions@github.com commit -q -m probe
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" probe-out
