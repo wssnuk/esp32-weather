@@ -18,4 +18,5 @@ enum Stage : uint8_t {
 };
 extern volatile uint8_t g_stage;       // ขั้นตอนของ loop หลัก
 extern volatile uint8_t g_radarStage;  // ขั้นตอนของ task เรดาร์
+extern volatile uint8_t g_aux;         // ข้อมูลเสริม (เช่น หน้าที่กำลังวาด)
 const char* stageName(uint8_t s);

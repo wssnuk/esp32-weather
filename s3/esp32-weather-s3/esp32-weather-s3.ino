@@ -19,6 +19,9 @@
 #include "geo.h"
 #include "net.h"
 #include <esp_system.h>
+
+// งานหลักใช้ HTTPS + JSON + วาดจอ → ขยาย stack จาก 8 KB เป็น 16 KB กันล้น
+SET_LOOP_TASK_STACK_SIZE(16 * 1024);
 #include "sound.h"
 #include "web.h"
 
@@ -27,6 +30,7 @@ Weather weather;
 AirQuality air;
 Market market;
 String lastResetInfo;  // สาเหตุการรีสตาร์ทครั้งก่อน (ถ้าค้าง)
+static bool lowPower = false;  // ครั้งก่อนไฟตก → ลดกำลังส่ง Wi-Fi / ไม่เล่นเสียงตอนเปิดเครื่อง
 static unsigned long nextMarketAt = 0;
 
 static bool portalMode = false;
@@ -227,7 +231,7 @@ static bool connectWifi() {
   if (settings.wifiSsid.isEmpty()) return false;
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(DEVICE_HOSTNAME);
-  WiFi.setTxPower(WIFI_POWER_15dBm);  // ลดกระแสกระชาก กันบอร์ดรีเซ็ตเองเมื่อไฟ USB อ่อน
+  WiFi.setTxPower(lowPower ? WIFI_POWER_11dBm : WIFI_POWER_15dBm);  // ลดกระแสกระชาก กันบอร์ดรีเซ็ตเองเมื่อไฟ USB อ่อน
   WiFi.begin(settings.wifiSsid.c_str(), settings.wifiPass.c_str());
   Serial.printf("[WiFi] กำลังเชื่อมต่อ \"%s\" ", settings.wifiSsid.c_str());
   Display::showConnecting(settings.wifiSsid);
@@ -257,7 +261,7 @@ static void startPortal() {
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(SETUP_AP_SSID);
   Web::beginPortal();
-  WiFi.setTxPower(WIFI_POWER_15dBm);
+  WiFi.setTxPower(lowPower ? WIFI_POWER_11dBm : WIFI_POWER_15dBm);
   Display::beginWifiSetup(SETUP_AP_SSID, WiFi.softAPIP().toString());
   Serial.println(F("\n================ โหมดตั้งค่า ================"));
   Serial.println(F(" 1) ใช้โทรศัพท์เชื่อมต่อ Wi-Fi ชื่อ: " SETUP_AP_SSID));
@@ -400,7 +404,7 @@ static void checkResetReason() {
   if (rr == ESP_RST_POWERON || crashStreak > 100) crashStreak = 0;
   if (crash) {
     crashStreak++;
-    lastResetInfo = String(name) + " @" + stageName(g_stage) + " / " + stageName(g_radarStage);
+    lastResetInfo = String(name) + " @" + stageName(g_stage) + " p" + String(g_aux) + " / " + stageName(g_radarStage);
     Preferences p;
     p.begin("diag", false);
     p.putString("last", lastResetInfo);
@@ -415,10 +419,12 @@ static void checkResetReason() {
     lastResetInfo = p.getString("last", "");
     p.end();
   }
-  safeMode = crashStreak >= 3;  // ค้างซ้ำ 3 ครั้ง → ปิดเรดาร์ชั่วคราวเพื่อให้ใช้งานส่วนอื่นได้
+  safeMode = crashStreak >= 2;  // ค้างซ้ำ 2 ครั้ง → ปิดเรดาร์/หาตำแหน่ง/เสียงชั่วคราว ให้ส่วนอื่นใช้งานได้
+  lowPower = rr == ESP_RST_BROWNOUT;
   if (safeMode) Serial.println(F("[Safe] ค้างซ้ำหลายครั้ง — ปิดเรดาร์ไว้ก่อนในรอบนี้"));
   g_stage = ST_BOOT;
   g_radarStage = 0;
+  g_aux = 0;
 }
 
 void setup() {
@@ -448,9 +454,9 @@ void setup() {
   Serial.printf("[Display] โหมด %u: %s (พิมพ์ display เพื่อเปลี่ยน)\n", settings.displayMode + 1,
                 Display::modeName(settings.displayMode));
   Display::showBoot(APP_VERSION);
-  if (crashStreak > 0) {  // แสดงสาเหตุบนจอ 6 วินาที (ถ่ายรูปส่งให้ผู้พัฒนาได้)
+  if (crashStreak > 0) {  // แสดงสาเหตุบนจอค้างไว้ 25 วินาที หรือจนกว่าจะแตะจอ (ถ่ายรูปส่งให้ผู้พัฒนาได้)
     Display::showBootReason(lastResetInfo, crashStreak, safeMode);
-    delay(6000);
+    Display::waitTap(25000);
   }
   // ช่วงหน้าจอเริ่มต้น: แตะค้างเพื่อเปลี่ยนโหมดจอได้ แม้ยังไม่ได้ตั้งค่า Wi-Fi
   for (unsigned long t = millis(); millis() - t < 2500;) {
@@ -459,9 +465,9 @@ void setup() {
   }
   // ครั้งแรกหลังอัปเดต: ให้ผู้ใช้เลือกโหมดภาพที่สว่างที่สุด แล้วทดสอบลำโพง
   if (Display::needsPresetChoice()) Display::choosePreset();
-  if (Sound::begin()) {
+  if (!safeMode && Sound::begin()) {
     if (Sound::needsTest()) Sound::runTest();
-    else Sound::play(Sound::MEL_BOOT);
+    else if (!lowPower) Sound::play(Sound::MEL_BOOT);
   }
   if (!connectWifi()) {
     startPortal();

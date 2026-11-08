@@ -10,6 +10,7 @@
 #include "assets.h"
 #include "radar.h"
 #include "lunar.h"
+#include "net.h"
 #include "config.h"
 #include <Preferences.h>
 
@@ -1425,6 +1426,7 @@ void drawForecast() {
 
 void render() {
   screen = SCR_WEATHER;
+  g_aux = page + 1;
   if (page == PAGE_HOME) drawHome();
   else if (page == PAGE_SUM) drawSummary();
   else if (page == PAGE_RADAR) drawRadar();
@@ -1825,8 +1827,10 @@ void showBootReason(const String& info, uint32_t streak, bool safe) {
   beginFrame(BG_PLAIN);
   txt(APP_NAME, 160, 60, 24, C_GOLD, middle_center);
   txt(String("v") + APP_VERSION, 160, 88, 11, C_MUTED, middle_center);
-  txt("Last restart: " + info, 160, 130, 11, C_RED, middle_center);
-  txt(String("x") + streak + (safe ? "  (safe mode: radar off)" : ""), 160, 152, 11, C_MUTED, middle_center);
+  tf(TF13B, "บอร์ดรีสตาร์ทเพราะ:", 160, 122, C_WHITE, 1);
+  txt(info, 160, 142, 14, C_RED, middle_center);
+  txt(String("x") + streak + (safe ? "  safe mode" : ""), 160, 164, 11, C_MUTED, middle_center);
+  tf(TF12, "ถ่ายรูปหน้านี้ส่งให้ผู้พัฒนา · แตะจอเพื่อไปต่อ", 160, 196, C_GOLD, 1);
   endFrame();
 }
 void showConnecting(const String& ssid) { message(TH_CONNECTING, ssid, C_GOLD); }

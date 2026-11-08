@@ -7,6 +7,7 @@ SemaphoreHandle_t mtx = nullptr;
 
 RTC_NOINIT_ATTR volatile uint8_t g_stage;
 RTC_NOINIT_ATTR volatile uint8_t g_radarStage;
+RTC_NOINIT_ATTR volatile uint8_t g_aux;
 
 const char* stageName(uint8_t s) {
   static const char* n[] = {"-", "boot", "loop", "weather", "air", "market", "geo", "update", "render",
