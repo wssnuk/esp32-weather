@@ -131,6 +131,22 @@ td:first-child{white-space:nowrap;font-weight:600}
     </details>
   </div>
 
+  <div class="card install" id="s3">
+    <h2>🆕 ตรวจบอร์ดใหม่ ESP32-S3 2.8" (ทัช Capacitive)</h2>
+    <p>สำหรับบอร์ดสีดำที่เขียนว่า <b>"2.8" LCD Display ESP32-S3 240x320 Capacitive Touch"</b> โปรแกรมนี้จะหาว่าจอ ทัช และชิปเสียงต่อกับขาไหน เพื่อใช้ทำระบบนาฬิกาและแจ้งเตือนอากาศเวอร์ชันใหม่</p>
+    <esp-web-install-button manifest="s3/manifest.json">
+      <button class="btn" slot="activate" style="background:#d6336c">🔍 ติดตั้งโปรแกรมตรวจบอร์ด S3</button>
+      <span slot="unsupported" class="note">ต้องใช้ Chrome หรือ Edge บนคอมพิวเตอร์</span>
+      <span slot="not-allowed" class="note">ต้องเปิดผ่าน https://</span>
+    </esp-web-install-button>
+    <ol class="steps">
+      <li>เสียบบอร์ด S3 ด้วยสาย USB-C → กดปุ่มด้านบน → เลือกพอร์ต (อาจชื่อ <b>USB JTAG/serial debug unit</b> หรือ <b>USB Serial</b>) → <b>Install</b></li>
+      <li>ถ้าเชื่อมต่อไม่ได้: กดปุ่ม <b>BOOT</b> ค้าง แล้วกด <b>RESET</b> 1 ครั้ง ปล่อย BOOT แล้วลองใหม่</li>
+      <li>ติดตั้งเสร็จ กดปุ่ม <b>RESET</b> บนบอร์ด แล้วเปิด <b>Logs &amp; Console</b> (กดปุ่มสีชมพูอีกครั้ง → เลือกพอร์ต → Logs &amp; Console)</li>
+      <li>ดูจอ ~40 วินาที (มีเลข 1–5) และถ่ายรูปข้อความใน Console ส่งให้ผู้พัฒนา</li>
+    </ol>
+  </div>
+
   <div class="card install" id="test">
     <h2>🔧 ทดสอบจอ (สำหรับบอร์ดที่จอขาวล้วน)</h2>
     <p>โปรแกรมนี้จะลองต่อจอ <b>6 แบบ</b> แบบละ 6 วินาที แต่ละแบบจะแสดง<b>ตัวเลขใหญ่ 1–6</b> และแถบสี แดง เขียว น้ำเงิน ถ้าแบบไหนมีภาพขึ้น แปลว่าเจอวิธีต่อจอที่ถูกต้อง</p>
