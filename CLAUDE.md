@@ -42,7 +42,9 @@ reply in Thai and keep user-facing strings (Serial, web UI) in Thai.
   Boards poll version.json every 6 h and self-update (autoupdate.cpp). Bump APP_VERSION and version.json together.
 - Display "presets" (1.3.0+): 4 panel init lists in display.cpp (0 old minimal, 1 ILI9341V IPS vendor, 2 ILI9341
   full gamma, 3 ST7789). Stored in Preferences "s3ui" (preset/pdone/ptries). First boot runs a tap-to-choose loop;
-  long-press 5 s or serial `preset` re-runs it. Rotation is only changed via serial `display`.
+  long-press 5 s or serial `preset` re-runs it (then a 2nd step picks the "vivid" level).
+- Vivid (1.3.1+): 64K-entry RGB565 LUT in PSRAM (saturation + gamma) applied to the canvas in endFrame;
+  levels 0-3, Preferences "s3ui" key "vivid", serial `vivid N`. Default VIVID_DEFAULT=2. Rotation is only changed via serial `display`.
 - Radar page: radar.cpp downloads radar.json + f0..f3.jpg (224x204) from the market-data branch in a FreeRTOS task
   (double-buffered). Map is centred on Bangkok (server/radar.py); page shows a coverage note for cities > 25 km away.
 - Sound: sound.cpp, ES8311 codec at I2C 0x18 on the touch bus (lgfx i2c port 1), I2S MCLK4 BCLK5 WS7, DOUT 6 or 8,

@@ -40,6 +40,8 @@ bool needsPresetChoice();
 void choosePreset();
 void setPreset(uint8_t p);
 uint8_t preset();
+void setVivid(uint8_t level);              // เร่งสี/ความสว่าง 0-3
+uint8_t vivid();
 // ใช้ตอนทดสอบลำโพง
 bool waitTap(unsigned long ms);
 bool hasTouch();

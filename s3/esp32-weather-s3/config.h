@@ -2,7 +2,7 @@
 #pragma once
 
 #define APP_NAME            "ESP32 Weather S3"
-#define APP_VERSION         "1.3.0"
+#define APP_VERSION         "1.3.1"
 #define DEVICE_HOSTNAME     "esp32-weather-s3"        // เข้าเว็บได้ที่ http://esp32-weather.local
 
 // เมืองเริ่มต้น (เปลี่ยนได้ภายหลังจากหน้าเว็บ หรือพิมพ์ใน Serial Monitor)
@@ -19,8 +19,9 @@
 #define WEATHER_UPDATE_MS   (5UL * 60UL * 1000UL)    // ทุก 5 นาที (เกือบเรียลไทม์)
 #define RAIN_ALERT_PERCENT  60                       // เตือนเมื่อโอกาสฝนใน 2 ชม. ถึงค่านี้
 #define BRIGHTNESS_DAY      255
-#define BRIGHTNESS_NIGHT    140                      // ความสว่างตอนกลางคืน (0-255)
-#define NIGHT_START_HOUR    22
+#define BRIGHTNESS_NIGHT    190                      // ความสว่างตอนกลางคืน (0-255)
+#define VIVID_DEFAULT       2                        // เร่งสี/ความสว่าง 0-3 (พิมพ์ vivid 0-3 เพื่อเปลี่ยน)
+#define NIGHT_START_HOUR    23
 #define NIGHT_END_HOUR      6
 // ข้อมูลตลาด (ทอง/หุ้น) — ไฟล์ที่ GitHub Actions อัปเดตให้
 #define MARKET_DATA_URL     "https://raw.githubusercontent.com/wssnuk/esp32-weather/market-data/market.json"

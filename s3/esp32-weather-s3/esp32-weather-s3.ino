@@ -91,6 +91,7 @@ static void printHelp() {
   Serial.println(F("  wifi           ล้างการตั้งค่า Wi-Fi แล้วเข้าโหมดตั้งค่า"));
   Serial.println(F("  display        หมุนจอ (ถ้าภาพกลับด้าน)"));
   Serial.println(F("  preset         เลือกโหมดภาพใหม่ (ถ้าจอซีด/ไม่สว่าง) หรือ preset 1-4"));
+  Serial.println(F("  vivid 0-3      เร่งสีและความสว่าง (0 ปิด, 3 จัดเต็ม)"));
   Serial.println(F("  sound          ทดสอบลำโพงใหม่"));
   Serial.println(F("  chime          เล่นเสียงเตือนฝนให้ฟัง"));
   Serial.println(F("  help           แสดงคำสั่ง"));
@@ -241,6 +242,7 @@ static void processChar(char c) {
     else if (lower == "display") nextDisplayMode();
     else if (lower == "preset") Display::choosePreset();
     else if (lower.startsWith("preset ")) { Display::setPreset(cmd.substring(7).toInt() - 1); Serial.printf("[Display] โหมดภาพ %u\n", Display::preset() + 1); }
+    else if (lower.startsWith("vivid ")) { Display::setVivid(cmd.substring(6).toInt()); Serial.printf("[Display] เร่งสี %u\n", Display::vivid()); }
     else if (lower == "sound") Sound::runTest();
     else if (lower == "chime") { Sound::play(Sound::MEL_RAIN); Serial.println("[Sound] " + Sound::status()); }
     else if (lower == "update") { if (!AutoUpdate::checkNow(true)) Serial.println(F("[Update] ไม่มีการอัปเดต")); }
