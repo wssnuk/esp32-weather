@@ -5,10 +5,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Fetch board drawings
+        run: |
+          sudo apt-get install -y -qq poppler-utils >/dev/null
+          mkdir -p out && cd out
+          for f in ES3C28P_Size.pdf ES3C28P_ES3N28P_Specification_V1.0.pdf; do
+            curl -sfL -A "Mozilla/5.0" -o "$f" "https://www.lcdwiki.com/res/ES3C28P/$f" && pdftoppm -r 200 -png "$f" "${f%.pdf}" && pdftotext -layout "$f" "${f%.pdf}.txt"
+          done
+          ls -la
+      - uses: actions/upload-artifact@v4
         with:
-          python-version: "3.12"
-      - run: pip install --quiet pillow && python server/rv_probe.py
-      - name: Esri tile format
-        run: curl -sI "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/10/478/803" | grep -i "content-type\|content-length"
+          name: drawings
+          path: out
