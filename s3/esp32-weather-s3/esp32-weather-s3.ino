@@ -467,6 +467,10 @@ void setup() {
     startPortal();
     return;
   }
+  // ตรวจเวอร์ชันใหม่ทันทีหลังต่อ Wi-Fi (ก่อนเริ่มงานอื่น) — ถ้าเวอร์ชันนี้มีปัญหาจนรีสตาร์ทเร็ว ก็ยังอัปเดตตัวแก้ได้
+  g_stage = ST_UPDATE;
+  AutoUpdate::checkNow(true);
+  g_stage = ST_BOOT;
 
   // เมืองที่กรอกจากหน้าตั้งค่า ยังไม่มีพิกัด -> ค้นหาตอนนี้
   if (isnan(settings.lat) || isnan(settings.lon)) {
@@ -479,7 +483,7 @@ void setup() {
       Store::saveLocation(settings.city, settings.lat, settings.lon);
     }
   }
-  autoLocation(false);  // หาตำแหน่งจากอินเทอร์เน็ต (ถ้าไม่ได้ตั้งเอง) + ชื่อตำบล/อำเภอ/จังหวัด
+  if (!safeMode) autoLocation(false);  // หาตำแหน่งจากอินเทอร์เน็ต (ถ้าไม่ได้ตั้งเอง) + ชื่อตำบล/อำเภอ/จังหวัด
   Web::beginDashboard();
   Radar::setLocation(settings.lat, settings.lon);
   if (!safeMode) Radar::begin();
