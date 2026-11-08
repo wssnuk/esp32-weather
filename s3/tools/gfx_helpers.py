@@ -80,4 +80,7 @@ def statusbar(im,title,t='14:27'):
     l=layer(im); d=ImageDraw.Draw(l)
     for i in range(3): d.rounded_rectangle([(250+i*5)*K,(16-3-i*2)*K,(253+i*5)*K,16*K],K,fill=(255,255,255,200))  # wifi bars
     return Image.alpha_composite(im,l)
-def finish(im): return im.resize((320,240),Image.LANCZOS).convert('RGB')
+def finish(im):
+    # ย่อจากภาพละเอียด แล้วเพิ่มความคม (unsharp) ให้เส้นและขอบการ์ดชัดบนจอเล็ก
+    from PIL import ImageFilter as _F
+    return im.resize((320,240),Image.LANCZOS).convert('RGB').filter(_F.UnsharpMask(radius=1.0, percent=70, threshold=2))

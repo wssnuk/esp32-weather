@@ -102,7 +102,7 @@ def bg_summary():
 
 
 def bg_rain():
-    im = header(aurora_base(), 'ฝนใน 2 ชั่วโมงข้างหน้า')
+    im = header(aurora_base(), 'ฝน 2 ชม. ข้างหน้า')
     im = gcard(im, (10, 30, 310, 84), r=10, accent=(90, 170, 255, 230))
     im = gcard(im, (10, 90, 310, 164), r=10, accent=(90, 170, 255, 230))
     im = text(im, (18, 99), 'ทุก 15 นาที (มม.)', 9, MUT, 'lm', b=False)
@@ -140,7 +140,7 @@ def bg_market():
 
 
 def bg_sky():
-    im = header(aurora_base(), 'ดวงอาทิตย์ · ดวงจันทร์')
+    im = header(aurora_base(), 'ดวงอาทิตย์ · จันทร์')
     # เส้นทางดวงอาทิตย์ (ครึ่งวงรี) + เส้นขอบฟ้า
     l = layer(im)
     d = ImageDraw.Draw(l)
@@ -319,6 +319,7 @@ def make_vlw(px, path=FBD):
         w, h = bb[2] - bb[0], bb[3] - bb[1]
         m = Image.new('L', (w, h), 0)
         ImageDraw.Draw(m).text((-bb[0], -bb[1]), ch, font=f, fill=255, anchor='ls')
+        m = crisp(m)
         glyphs.append((ord(ch), h, w, adv, -bb[1], bb[0], m.tobytes()))
     out = bytearray(struct.pack('>6i', len(glyphs), 11, px, 0, asc, desc))
     for (u, h, w, adv, dy, dx, _) in glyphs:
@@ -328,6 +329,11 @@ def make_vlw(px, path=FBD):
     return bytes(out)
 
 
+def crisp(m):
+    """เพิ่มความคมของขอบตัวอักษร: ตัดขอบจาง ๆ ออก และทำเส้นให้เข้มขึ้น"""
+    return m.point(lambda a: 0 if a < 28 else min(255, int((a - 28) * 1.45)))
+
+
 # ---------------------------------------------------------------- ข้อความไทย (alpha 4 บิต ลบขอบเรียบ)
 def thai_alpha(text_, px, bold=True):
     f = ImageFont.truetype(FBD if bold else FR, px)
@@ -335,7 +341,7 @@ def thai_alpha(text_, px, bold=True):
     w = int(f.getlength(text_)) + 2
     m = Image.new('L', (w, asc + desc), 0)
     ImageDraw.Draw(m).text((1, 0), text_, font=f, fill=255)
-    return m
+    return crisp(m)
 
 
 WEEKDAYS = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์']
@@ -409,20 +415,25 @@ TEXTS += [
     ('R_HERE', 'ฝนตกบริเวณนี้', 11, True),
     ('R_NEAR', 'มีฝนห่าง', 11, True), ('R_NONE', 'ไม่มีฝน', 11, True),
     ('R_NONE2', 'ในรัศมี 80 กม.', 11, True), ('R_KM', 'กม.', 9, False), ('R_MIN', 'นาที', 9, False),
-    ('R_NOW', 'ตอนนี้', 8, False),  ('R_NODATA', 'กำลังโหลดเรดาร์...', 12, True),
+    ('R_NOW', 'ตอนนี้', 9, False),  ('R_NODATA', 'กำลังโหลดเรดาร์...', 12, True),
     ('R_TITLE', 'เรดาร์ฝน', 11, True), ('R_NOCOV', 'พื้นที่นี้ยังไม่มีเรดาร์ครอบคลุม', 11, True), ('R_MMH', 'มม./ชม.', 9, False),
     ('R_ETA2', 'ถึงใน ~', 11, True),
     ('RN_START', 'ฝนจะเริ่มตกในอีก', 14, True), ('RN_NONE', 'ไม่มีฝนใน 2 ชั่วโมงนี้', 14, True),
     ('RN_NOW', 'ฝนกำลังตกอยู่', 14, True), ('RN_STOP', 'คาดว่าหยุดประมาณ', 9, False), ('RN_TOTAL', 'รวม 2 ชม.', 9, False),
     ('RN_MM', 'มม.', 9, False), ('RN_LV0', 'ฝนเล็กน้อย', 9, True), ('RN_LV1', 'ฝนปานกลาง', 9, True),
-    ('RN_LV2', 'ฝนหนัก', 9, True), ('RN_LV3', 'ฝนหนักมาก', 9, True), ('RN_RADAR', 'เรดาร์ตอนนี้', 8, False),
-    ('RN_DRY', 'แห้ง', 9, False), ('RN_SRC', 'พยากรณ์ Open-Meteo', 8, False),
+    ('RN_LV2', 'ฝนหนัก', 9, True), ('RN_LV3', 'ฝนหนักมาก', 9, True), ('RN_RADAR', 'เรดาร์ตอนนี้', 9, False),
+    ('RN_DRY', 'แห้ง', 9, False), ('RN_SRC', 'พยากรณ์ Open-Meteo', 9, False),
     ('T_RAIN_IN', 'ฝนจะเริ่มตกในอีก', 10, True),
-    ('MK_NODATA', 'กำลังโหลดราคา...', 12, False), ('MK_EST', '(ประมาณ)', 8, False),
-    ('MK_OPEN', 'ตลาดเปิด', 8, True), ('MK_CLOSED', 'ตลาดปิด', 8, True),
+    ('MK_NODATA', 'กำลังโหลดราคา...', 12, False), ('MK_EST', '(ประมาณ)', 9, False),
+    ('MK_OPEN', 'ตลาดเปิด', 9, True), ('MK_CLOSED', 'ตลาดปิด', 9, True),
     ('SKY_DAY', 'กลางวันยาว', 9, False), ('SKY_HR', 'ชม.', 9, False), ('SKY_MIN', 'นาที', 9, False),
     ('SKY_FULL', 'เต็มดวงในอีก', 9, False), ('SKY_NEW', 'เดือนดับในอีก', 9, False), ('SKY_DAYS', 'วัน', 9, False),
     ('SKY_LIT', 'สว่าง', 9, False), ('SKY_NIGHT', 'กลางคืน', 9, True),
+    ('WDS_0', 'อา.', 10, False), ('WDS_1', 'จ.', 10, False), ('WDS_2', 'อ.', 10, False), ('WDS_3', 'พ.', 10, False),
+    ('WDS_4', 'พฤ.', 10, False), ('WDS_5', 'ศ.', 10, False), ('WDS_6', 'ส.', 10, False),
+    ('MONS_0', 'ม.ค.', 10, False), ('MONS_1', 'ก.พ.', 10, False), ('MONS_2', 'มี.ค.', 10, False), ('MONS_3', 'เม.ย.', 10, False),
+    ('MONS_4', 'พ.ค.', 10, False), ('MONS_5', 'มิ.ย.', 10, False), ('MONS_6', 'ก.ค.', 10, False), ('MONS_7', 'ส.ค.', 10, False),
+    ('MONS_8', 'ก.ย.', 10, False), ('MONS_9', 'ต.ค.', 10, False), ('MONS_10', 'พ.ย.', 10, False), ('MONS_11', 'ธ.ค.', 10, False),
     ('MOON_0', 'เดือนดับ', 13, True), ('MOON_1', 'ข้างขึ้น เสี้ยว', 13, True), ('MOON_2', 'ข้างขึ้น ครึ่งดวง', 13, True),
     ('MOON_3', 'ข้างขึ้น ค่อนดวง', 13, True), ('MOON_4', 'จันทร์เต็มดวง', 13, True), ('MOON_5', 'ข้างแรม ค่อนดวง', 13, True),
     ('MOON_6', 'ข้างแรม ครึ่งดวง', 13, True), ('MOON_7', 'ข้างแรม เสี้ยว', 13, True),

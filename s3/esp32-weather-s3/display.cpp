@@ -430,13 +430,29 @@ void pageDots(int cx, int y) {
     else g->fillSmoothCircle(x, y, 1.6f, RGB(140, 150, 180));
   }
 }
-void headerClock() {
-  pageDots(238, 12);
+// แถบบนของทุกหน้า: วันที่ · อุณหภูมิตอนนี้ · เวลา (มีวินาที) + จุดบอกหน้าด้านล่างจอ
+void headerClock(bool dots = true) {
+  if (dots) pageDots(160, 236);
   struct tm t;
-  if (!getLocalTime(&t, 0)) return;
-  char b[6];
-  snprintf(b, sizeof(b), "%02d:%02d", t.tm_hour, t.tm_min);
-  txt(b, 308, 12, 11, C_WHITE, middle_right);
+  bool ok = getLocalTime(&t, 0);
+  char b[9] = "--:--:--";
+  if (ok) snprintf(b, sizeof(b), "%02d:%02d:%02d", t.tm_hour, t.tm_min, t.tm_sec);
+  txt(b, 310, 12, 11, C_WHITE, middle_right);
+  int x = 310 - txtW(b, 11) - 8;
+  if (Wx && Wx->valid && !isnan(Wx->temp)) {
+    String tt = f0(Wx->temp) + "°";
+    txt(tt, x, 12, 11, C_GOLD, middle_right);
+    x -= txtW(tt, 11) + 8;
+  }
+  if (ok) {
+    ThaiId mon = (ThaiId)(TH_MONS_0 + t.tm_mon), wd = (ThaiId)(TH_WDS_0 + t.tm_wday);
+    thai(mon, x, 12, C_MUTED, 2);
+    x -= thaiW(mon) + 3;
+    String d = String(t.tm_mday);
+    txt(d, x, 12, 11, C_WHITE, middle_right);
+    x -= txtW(d, 11) + 3;
+    thai(wd, x, 12, C_TEAL, 2);
+  }
 }
 
 // ---------------- สถานะ ----------------
@@ -807,17 +823,18 @@ void drawRadar() {
   snprintf(hm, sizeof(hm), "%02d:%02d", lt.tm_hour, lt.tm_min);
   txt(hm, tx, 11, 11, fi == n - 1 ? C_WHITE : C_MUTED, middle_left);
   tx += txtW(hm, 11) + 8;
-  for (int i = 0; i < n; i++) g->fillSmoothRoundRect(tx + i * 9, 8, 7, 6, 2, i == fi ? C_TEAL : RGB(70, 85, 110));
+  for (int i = 0; i < n; i++) g->fillSmoothRoundRect(tx + i * 7, 8, 5, 6, 2, i == fi ? C_TEAL : RGB(70, 85, 110));
   if (fi == n - 1) {
     bool on = (now / 500) % 2;
-    g->fillSmoothCircle(tx + n * 9 + 6, 11, 3, on ? C_RED : RGB(120, 40, 50));
+    g->fillSmoothCircle(tx + n * 7 + 4, 11, 3, on ? C_RED : RGB(120, 40, 50));
   }
-  headerClock();
+  headerClock(false);
   // เครดิต
   txt("Esri | RainViewer", 316, 204, 9, RGB(150, 160, 180), bottom_right);
   // แถบล่าง: สถานะฝน
   g->fillRectAlpha(0, 208, 320, 32, 170, 0);
-  Line L{10, 224};
+  pageDots(160, 236);
+  Line L{10, 222};
   if (!r.covered) {
     L.th(TH_R_NOCOV, C_MUTED);
   } else if (r.hereMmh >= 0.2f) {
@@ -1848,9 +1865,15 @@ void showDisplayMode(uint8_t mode) {
 Touch loop() {
   // หน้านาฬิกาอัปเดต 5 ครั้ง/วินาที (แถบวินาทีลื่น) หน้าอื่นทุก 1 วินาที
   unsigned long now = millis();
-  unsigned long interval = page == PAGE_HOME ? 200 : page == PAGE_RADAR ? 100 : 1000;
-  if (screen == SCR_WEATHER && now - lastFrame >= interval) {
+  // หน้านาฬิกา 5 ครั้ง/วินาที, เรดาร์ 10 ครั้ง/วินาที, หน้าอื่นวาดใหม่ทุกครั้งที่วินาทีเปลี่ยน
+  static time_t lastSec = 0;
+  time_t sec = time(nullptr);
+  bool due = page == PAGE_HOME ? now - lastFrame >= 200
+           : page == PAGE_RADAR ? now - lastFrame >= 100
+           : (sec != lastSec && now - lastFrame >= 120) || now - lastFrame >= 1000;
+  if (screen == SCR_WEATHER && due) {
     lastFrame = now;
+    lastSec = sec;
     render();
   }
   static unsigned long lastBright = 0;
