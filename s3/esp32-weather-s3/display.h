@@ -16,6 +16,13 @@ void begin(uint8_t mode);
 void showBoot(const char* version);
 void showConnecting(const String& ssid);
 void showWifiFailed();
+void showWifiFailedReason(int wlStatus);   // บอกสาเหตุที่ต่อ Wi-Fi ไม่ได้ (รหัสผิด / ไม่พบ ฯลฯ)
+// ตั้งค่า Wi-Fi บนจอสัมผัส: เลือกเครือข่าย + แป้นพิมพ์บนจอ
+void beginWifiSetup(const char* apSsid, const String& apIp);
+bool wifiSetupLoop(String& ssid, String& pass);  // คืน true เมื่อผู้ใช้กด "เชื่อมต่อ"
+void wifiSetupBackToKeyboard();
+bool wifiSetupBusy();
+void setIdleHook(void (*hook)());          // งานที่ต้องทำต่อระหว่างรอแตะ (เว็บ, Improv)                       // ผู้ใช้กำลังตั้งค่าอยู่ (อย่ารีสตาร์ท)
 void showPortal(const char* apSsid, const String& ip);
 void showLoading();
 void showUpdating();                       // แถบเล็ก ๆ ระหว่างอัปเดต

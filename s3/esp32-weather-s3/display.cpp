@@ -9,6 +9,7 @@
 #include <LovyanGFX.hpp>
 #include "assets.h"
 #include "config.h"
+#include <Preferences.h>
 
 // ---------------- ขาของบอร์ด (ยืนยันจากโปรแกรมตรวจบอร์ด: จอแบบที่ 1 + กลับสี) ----------------
 #define PIN_SCK 12
@@ -311,7 +312,7 @@ const AirQuality* A = nullptr;
 constexpr int PAGE_COUNT = 3;
 enum { PAGE_HOME = 0, PAGE_NOW, PAGE_FC };
 int page = PAGE_HOME;
-enum Screen { SCR_NONE, SCR_WEATHER, SCR_MESSAGE } screen = SCR_NONE;
+enum Screen { SCR_NONE, SCR_WEATHER, SCR_MESSAGE, SCR_SETUP } screen = SCR_NONE;
 bool updating = false;
 unsigned long lastFrame = 0, touchStart = 0, wakeUntil = 0;
 bool longFired = false;
@@ -535,6 +536,217 @@ void message(ThaiId id, const String& sub, uint32_t subCol) {
   endFrame();
 }
 
+
+// ================== ปรับทัช + ตั้งค่า Wi-Fi บนจอ ==================
+struct Cal { float ax, bx, ay, by; uint8_t swap; uint8_t ok; } cal = {1, 0, 1, 0, 0, 0};
+void (*idleHook)() = nullptr;
+Preferences uiPrefs;
+
+void loadCal() {
+  uiPrefs.begin("s3ui", true);
+  if (uiPrefs.getBytesLength("cal") == sizeof(Cal)) uiPrefs.getBytes("cal", &cal, sizeof(Cal));
+  uiPrefs.end();
+}
+void saveCal() {
+  uiPrefs.begin("s3ui", false);
+  uiPrefs.putBytes("cal", &cal, sizeof(Cal));
+  uiPrefs.end();
+}
+// อ่านจุดที่แตะ (พิกัดดิบ)
+bool rawTouch(int& rx, int& ry) {
+  if (touchKind == TOUCH_NONE) return false;
+  lgfx::touch_point_t tp;
+  if (gfx->getTouchRaw(&tp, 1) == 0) return false;
+  rx = tp.x;
+  ry = tp.y;
+  return true;
+}
+// อ่านจุดที่แตะ (พิกัดบนจอ หลังปรับทัชแล้ว)
+bool screenTouch(int& x, int& y) {
+  int rx, ry;
+  if (!rawTouch(rx, ry)) return false;
+  float a = cal.swap ? ry : rx, b = cal.swap ? rx : ry;
+  x = constrain((int)(cal.ax * a + cal.bx), 0, 319);
+  y = constrain((int)(cal.ay * b + cal.by), 0, 239);
+  return true;
+}
+// รอให้แตะแล้วปล่อย คืนค่าเฉลี่ยของพิกัดดิบ
+void waitTapRaw(int& rx, int& ry) {
+  while (true) {
+    int x, y;
+    while (!rawTouch(x, y)) { if (idleHook) idleHook(); delay(10); }
+    long sx = 0, sy = 0;
+    int n = 0;
+    unsigned long t0 = millis();
+    while (rawTouch(x, y)) { sx += x; sy += y; n++; delay(10); }
+    if (n >= 2 && millis() - t0 > 40) { rx = sx / n; ry = sy / n; delay(150); return; }
+  }
+}
+void calTarget(int x, int y) {
+  beginFrame(BG_PLAIN);
+  thai(TH_CAL_TITLE, 160, 100, C_GOLD, 1);
+  thai(TH_CAL_TAP, 160, 128, C_WHITE, 1);
+  g->drawCircle(x, y, 12, C_GOLD);
+  g->fillSmoothCircle(x, y, 5, C_GOLD);
+  g->drawFastHLine(x - 18, y, 36, C_GOLD);
+  g->drawFastVLine(x, y - 18, 36, C_GOLD);
+  endFrame();
+}
+void runCalibration() {
+  screen = SCR_SETUP;
+  int r1x, r1y, r2x, r2y;
+  calTarget(24, 24);
+  waitTapRaw(r1x, r1y);
+  calTarget(296, 216);
+  waitTapRaw(r2x, r2y);
+  bool swap = abs(r2y - r1y) > abs(r2x - r1x);  // แกนดิบไหนเปลี่ยนตามแนวนอนมากกว่า
+  float ax0 = swap ? r1y : r1x, ax1 = swap ? r2y : r2x;
+  float ay0 = swap ? r1x : r1y, ay1 = swap ? r2x : r2y;
+  if (fabs(ax1 - ax0) < 20 || fabs(ay1 - ay0) < 20) { runCalibration(); return; }
+  cal.swap = swap;
+  cal.ax = (296 - 24) / (ax1 - ax0);
+  cal.bx = 24 - cal.ax * ax0;
+  cal.ay = (216 - 24) / (ay1 - ay0);
+  cal.by = 24 - cal.ay * ay0;
+  cal.ok = 1;
+  saveCal();
+  Serial.printf("[Touch] ปรับทัชแล้ว swap=%d ax=%.3f ay=%.3f\n", cal.swap, cal.ax, cal.ay);
+}
+
+// ----- รายการ Wi-Fi -----
+struct Net { String ssid; int rssi; bool secure; };
+Net nets[20];
+int netCount = 0, netTop = 0;
+String apName, apAddr, chosen, typed;
+enum SetupStage { ST_LIST, ST_KEYS } stage = ST_LIST;
+int kbLayer = 0;  // 0 ตัวเล็ก 1 ตัวใหญ่ 2 สัญลักษณ์
+bool setupActive = false;
+unsigned long lastSetupTouch = 0;
+
+void scanNets() {
+  beginFrame(BG_PLAIN);
+  thai(TH_WF_SCANNING, 160, 110, C_WHITE, 1);
+  endFrame();
+  int n = WiFi.scanNetworks();
+  netCount = 0;
+  for (int i = 0; i < n && netCount < 20; i++) {
+    String s = WiFi.SSID(i);
+    if (s.isEmpty()) continue;
+    bool dup = false;
+    for (int j = 0; j < netCount; j++) if (nets[j].ssid == s) { dup = true; break; }
+    if (dup) continue;
+    nets[netCount++] = {s, WiFi.RSSI(i), WiFi.encryptionType(i) != WIFI_AUTH_OPEN};
+  }
+  WiFi.scanDelete();
+  // เรียงจากสัญญาณแรงไปอ่อน
+  for (int i = 0; i < netCount; i++)
+    for (int j = i + 1; j < netCount; j++)
+      if (nets[j].rssi > nets[i].rssi) std::swap(nets[i], nets[j]);
+  netTop = 0;
+}
+
+void button(int x, int y, int w, int h, ThaiId label, uint32_t fill, uint32_t textCol) {
+  g->fillSmoothRoundRect(x, y, w, h, 8, fill);
+  thai(label, x + w / 2, y + h / 2, textCol, 1);
+}
+void drawList() {
+  beginFrame(BG_PLAIN);
+  thai(TH_WF_TITLE, 12, 14, C_GOLD);
+  if (netCount == 0) thai(TH_WF_NONE, 160, 110, C_MUTED, 1);
+  for (int i = 0; i < 5 && netTop + i < netCount; i++) {
+    const Net& n = nets[netTop + i];
+    int y = 30 + i * 35;
+    g->fillSmoothRoundRect(10, y, 300, 31, 8, RGB(26, 32, 48));
+    g->drawRoundRect(10, y, 300, 31, 8, RGB(90, 80, 60));
+    String s = n.ssid.length() > 24 ? n.ssid.substring(0, 23) + "." : n.ssid;
+    txt(s, 22, y + 16, 14, C_WHITE, middle_left);
+    int bars = n.rssi > -60 ? 3 : n.rssi > -72 ? 2 : 1;
+    for (int b = 0; b < 3; b++) g->fillRect(284 + b * 6, y + 21 - b * 4, 4, 4 + b * 4, b < bars ? C_TEAL : RGB(70, 80, 100));
+    if (n.secure) { g->drawRoundRect(266, y + 13, 9, 8, 2, C_MUTED); g->drawCircle(270, y + 12, 3, C_MUTED); }
+  }
+  button(10, 206, 100, 30, TH_WF_RESCAN, RGB(60, 70, 96), C_WHITE);
+  if (netTop > 0) { g->fillSmoothRoundRect(118, 206, 44, 30, 8, RGB(60, 70, 96)); g->fillTriangle(140, 213, 132, 228, 148, 228, C_WHITE); }
+  if (netTop + 5 < netCount) { g->fillSmoothRoundRect(168, 206, 44, 30, 8, RGB(60, 70, 96)); g->fillTriangle(190, 229, 182, 214, 198, 214, C_WHITE); }
+  thai(TH_WF_PHONE, 218, 214, C_MUTED);
+  txt(apName, 218, 229, 9, C_GOLD, middle_left);
+  endFrame();
+}
+
+const char* KB_ROWS[3][4] = {
+  {"1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"},
+  {"1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"},
+  {"1234567890", "!@#$%^&*()", "-_=+[]{};:", "'\",.?/<>"},
+};
+struct Key { int x, y, w, h; char c; int special; };  // special: 0 ตัวอักษร 1 shift 2 ลบ 3 สลับ 4 เว้นวรรค 5 ย้อนกลับ 6 เชื่อมต่อ
+Key keys[60];
+int keyCount = 0;
+
+void layoutKeys() {
+  keyCount = 0;
+  const int top = 60, kh = 33, gap = 3;
+  for (int r = 0; r < 4; r++) {
+    const char* row = KB_ROWS[kbLayer][r];
+    int n = strlen(row);
+    int kw = 29;
+    if (r == 3) kw = min(29, (228 + gap) / n - gap);  // แถวล่างเว้นที่ให้ปุ่ม shift / ลบ
+    int rowW = n * (kw + gap) - gap;
+    int x = r == 3 ? 46 + (228 - rowW) / 2 : (320 - rowW) / 2;
+    for (int i = 0; i < n; i++) keys[keyCount++] = {x + i * (kw + gap), top + r * (kh + gap), kw, kh, row[i], 0};
+  }
+  int y3 = top + 3 * (kh + gap);
+  keys[keyCount++] = {4, y3, 40, kh, 0, 1};
+  keys[keyCount++] = {276, y3, 40, kh, 0, 2};
+  int y4 = top + 4 * (kh + gap);
+  keys[keyCount++] = {4, y4, 54, 32, 0, 3};
+  keys[keyCount++] = {62, y4, 96, 32, ' ', 4};
+  keys[keyCount++] = {162, y4, 66, 32, 0, 5};
+  keys[keyCount++] = {232, y4, 84, 32, 0, 6};
+}
+void drawKeys(int pressed = -1) {
+  beginFrame(BG_PLAIN);
+  txt(chosen, 12, 10, 11, C_GOLD, middle_left);
+  thai(TH_WF_PASS, 308, 10, C_MUTED, 2);
+  g->fillSmoothRoundRect(8, 20, 304, 34, 8, RGB(20, 24, 36));
+  g->drawRoundRect(8, 20, 304, 34, 8, C_GOLD);
+  String shown = typed;
+  useFont(18);
+  while (shown.length() > 1 && g->textWidth(shown) > 284) shown.remove(0, 1);
+  txt(shown, 16, 37, 18, C_WHITE, middle_left);
+  int cx = 16 + txtW(shown, 18) + 2;
+  if ((millis() / 500) % 2) g->fillRect(cx, 27, 2, 20, C_GOLD);
+  for (int i = 0; i < keyCount; i++) {
+    const Key& k = keys[i];
+    uint32_t fill = i == pressed ? C_GOLD : (k.special == 6 ? RGB(46, 150, 90) : k.special ? RGB(60, 70, 96) : RGB(40, 46, 64));
+    g->fillSmoothRoundRect(k.x, k.y, k.w, k.h, 6, fill);
+    uint32_t tc = i == pressed ? RGB(20, 16, 10) : C_WHITE;
+    if (k.special == 0) txt(String(k.c), k.x + k.w / 2, k.y + k.h / 2, 14, tc, middle_center);
+    else if (k.special == 1) txt(kbLayer == 2 ? "abc" : kbLayer == 1 ? "ABC" : "abc", k.x + k.w / 2, k.y + k.h / 2, 11, kbLayer == 1 ? C_GOLD : tc, middle_center);
+    else if (k.special == 2) txt("<-", k.x + k.w / 2, k.y + k.h / 2, 14, tc, middle_center);
+    else if (k.special == 3) txt(kbLayer == 2 ? "abc" : "?123", k.x + k.w / 2, k.y + k.h / 2, 11, tc, middle_center);
+    else if (k.special == 4) txt("space", k.x + k.w / 2, k.y + k.h / 2, 11, C_MUTED, middle_center);
+    else if (k.special == 5) thai(TH_WF_CANCEL, k.x + k.w / 2, k.y + k.h / 2, tc, 1);
+    else if (k.special == 6) thai(TH_WF_CONNECT, k.x + k.w / 2, k.y + k.h / 2, tc, 1);
+  }
+  endFrame();
+}
+int hitKey(int x, int y) {
+  for (int i = 0; i < keyCount; i++)
+    if (x >= keys[i].x - 1 && x <= keys[i].x + keys[i].w + 1 && y >= keys[i].y - 1 && y <= keys[i].y + keys[i].h + 1) return i;
+  return -1;
+}
+// คืนพิกัดเมื่อ "ปล่อยนิ้ว" (แตะ 1 ครั้ง)
+bool tapAt(int& x, int& y) {
+  static bool down = false;
+  static int lx = 0, ly = 0;
+  int tx, ty;
+  if (screenTouch(tx, ty)) { down = true; lx = tx; ly = ty; lastSetupTouch = millis(); return false; }
+  if (down) { down = false; x = lx; y = ly; return true; }
+  return false;
+}
+
+}  // namespace (ปิดชั่วคราวเพื่อประกาศฟังก์ชันสาธารณะด้านล่าง)
+namespace {
+
 void applyBrightness() {
   uint8_t target = BRIGHTNESS_DAY;
   struct tm t;
@@ -557,6 +769,7 @@ const char* modeName(uint8_t mode) {
 
 void begin(uint8_t mode) {
   detectTouch();
+  loadCal();
   gfx = new LGFX(touchKind, touchSda, touchScl, touchAddr);
   gfx->init();
   static const uint8_t rot[] = {5, 7, 1, 3};
@@ -606,6 +819,81 @@ void showPortal(const char* apSsid, const String& ip) {
   thai(TH_SETUP_C, 16, 170, C_WHITE);
   txt("http://" + ip, 16 + thaiW(TH_SETUP_C) + 8, 170, 14, C_TEAL, middle_left);
   endFrame();
+}
+
+
+void showWifiFailedReason(int st) {
+  ThaiId id = st == WL_NO_SSID_AVAIL ? TH_WF_ERR_NOSSID : st == WL_CONNECT_FAILED ? TH_WF_ERR_PASS : TH_WF_ERR_OTHER;
+  screen = SCR_MESSAGE;
+  beginFrame(BG_PLAIN);
+  thai(TH_WIFI_FAILED, 160, 96, C_RED, 1);
+  thai(id, 160, 130, C_WHITE, 1);
+  txt(String("code ") + st, 160, 160, 9, C_MUTED, middle_center);
+  endFrame();
+}
+
+void beginWifiSetup(const char* apSsid, const String& apIp) {
+  apName = apSsid;
+  apAddr = apIp;
+  setupActive = true;
+  screen = SCR_SETUP;
+  if (touchKind == TOUCH_NONE) { showPortal(apSsid, apIp); return; }
+  if (!cal.ok) runCalibration();
+  stage = ST_LIST;
+  scanNets();
+  drawList();
+}
+
+void wifiSetupBackToKeyboard() {
+  screen = SCR_SETUP;
+  stage = ST_KEYS;
+  layoutKeys();
+  drawKeys();
+}
+
+void setIdleHook(void (*hook)()) { idleHook = hook; }
+
+bool wifiSetupBusy() { return setupActive && millis() - lastSetupTouch < 120000UL; }
+
+bool wifiSetupLoop(String& ssid, String& pass) {
+  if (screen != SCR_SETUP || touchKind == TOUCH_NONE) return false;
+  int x, y;
+  static unsigned long lastBlink = 0;
+  if (stage == ST_KEYS && millis() - lastBlink > 500) { lastBlink = millis(); drawKeys(); }
+  if (!tapAt(x, y)) return false;
+  if (stage == ST_LIST) {
+    if (y >= 206) {
+      if (x < 112) { scanNets(); drawList(); }
+      else if (x < 164 && netTop > 0) { netTop -= 5; drawList(); }
+      else if (x < 214 && netTop + 5 < netCount) { netTop += 5; drawList(); }
+      return false;
+    }
+    int idx = (y - 30) / 35;
+    if (y >= 30 && idx >= 0 && idx < 5 && netTop + idx < netCount) {
+      chosen = nets[netTop + idx].ssid;
+      typed = "";
+      kbLayer = 0;
+      if (!nets[netTop + idx].secure) { ssid = chosen; pass = ""; return true; }
+      wifiSetupBackToKeyboard();
+    }
+    return false;
+  }
+  int k = hitKey(x, y);
+  if (k < 0) return false;
+  drawKeys(k);
+  delay(60);
+  const Key& key = keys[k];
+  switch (key.special) {
+    case 0: if (typed.length() < 63) typed += key.c; if (kbLayer == 1) { kbLayer = 0; layoutKeys(); } break;
+    case 1: kbLayer = kbLayer == 2 ? 0 : (kbLayer == 0 ? 1 : 0); layoutKeys(); break;
+    case 2: if (typed.length()) typed.remove(typed.length() - 1); break;
+    case 3: kbLayer = kbLayer == 2 ? 0 : 2; layoutKeys(); break;
+    case 4: if (typed.length() < 63) typed += ' '; break;
+    case 5: stage = ST_LIST; drawList(); return false;
+    case 6: ssid = chosen; pass = typed; return true;
+  }
+  drawKeys();
+  return false;
 }
 
 void showUpdatingFirmware(const String& version) {
@@ -664,6 +952,7 @@ Touch loop() {
     lastBright = now;
     applyBrightness();
   }
+  if (screen == SCR_SETUP) return Touch::None;  // หน้าตั้งค่า Wi-Fi จัดการการแตะเอง
   int32_t x, y;
   bool pressed = touchKind != TOUCH_NONE && gfx->getTouch(&x, &y) > 0;
   if (pressed) {

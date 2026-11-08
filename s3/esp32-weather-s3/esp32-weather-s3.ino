@@ -139,6 +139,7 @@ static bool connectWifi() {
   if (settings.wifiSsid.isEmpty()) return false;
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(DEVICE_HOSTNAME);
+  WiFi.setTxPower(WIFI_POWER_15dBm);  // ลดกระแสกระชาก กันบอร์ดรีเซ็ตเองเมื่อไฟ USB อ่อน
   WiFi.begin(settings.wifiSsid.c_str(), settings.wifiPass.c_str());
   Serial.printf("[WiFi] กำลังเชื่อมต่อ \"%s\" ", settings.wifiSsid.c_str());
   Display::showConnecting(settings.wifiSsid);
@@ -153,8 +154,9 @@ static bool connectWifi() {
   Serial.println();
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println(F("[WiFi] เชื่อมต่อไม่สำเร็จ — ตรวจรหัสผ่าน และต้องเป็น Wi-Fi 2.4 GHz"));
-    Display::showWifiFailed();
-    delay(2500);
+    Serial.printf("[WiFi] สถานะ %d\n", WiFi.status());
+    Display::showWifiFailedReason(WiFi.status());
+    delay(3500);
     return false;
   }
   Serial.printf("[WiFi] เชื่อมต่อแล้ว ✅ IP: %s\n", WiFi.localIP().toString().c_str());
@@ -167,7 +169,8 @@ static void startPortal() {
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(SETUP_AP_SSID);
   Web::beginPortal();
-  Display::showPortal(SETUP_AP_SSID, WiFi.softAPIP().toString());
+  WiFi.setTxPower(WIFI_POWER_15dBm);
+  Display::beginWifiSetup(SETUP_AP_SSID, WiFi.softAPIP().toString());
   Serial.println(F("\n================ โหมดตั้งค่า ================"));
   Serial.println(F(" 1) ใช้โทรศัพท์เชื่อมต่อ Wi-Fi ชื่อ: " SETUP_AP_SSID));
   Serial.printf(" 2) หน้าตั้งค่าจะเด้งขึ้นเอง (ถ้าไม่เด้ง เปิด http://%s/)\n",
@@ -273,6 +276,7 @@ void setup() {
 
   Store::load(settings);
   Display::begin(settings.displayMode);
+  Display::setIdleHook([]() { Web::loop(); handleSerial(); });
   Serial.printf("[Display] โหมด %u: %s (พิมพ์ display เพื่อเปลี่ยน)\n", settings.displayMode + 1,
                 Display::modeName(settings.displayMode));
   Display::showBoot(APP_VERSION);
@@ -312,9 +316,27 @@ void loop() {
   if (touch == Display::Touch::LongPress) nextDisplayMode();
 
   if (portalMode) {
-    Display::setRgb(false, false, (millis() / 500) % 2);  // ไฟสีฟ้ากะพริบ = รอตั้งค่า
-    // มีรหัส Wi-Fi เดิมอยู่แล้ว (เช่น เราเตอร์ดับชั่วคราว) -> รอสักพักแล้วลองต่อใหม่
-    if (!settings.wifiSsid.isEmpty() && millis() - portalStartedAt > PORTAL_RETRY_MS) ESP.restart();
+    // ตั้งค่า Wi-Fi บนจอสัมผัส
+    String ssid, pass;
+    if (Display::wifiSetupLoop(ssid, pass)) {
+      Display::showConnecting(ssid);
+      WiFi.begin(ssid.c_str(), pass.c_str());
+      unsigned long t0 = millis();
+      while (WiFi.status() != WL_CONNECTED && millis() - t0 < 20000) { Web::loop(); delay(100); }
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("[WiFi] ตั้งค่าบนจอสำเร็จ: %s\n", ssid.c_str());
+        Store::saveWifi(ssid, pass);
+        delay(800);
+        ESP.restart();
+      }
+      Serial.printf("[WiFi] ตั้งค่าบนจอไม่สำเร็จ สถานะ %d\n", WiFi.status());
+      Display::showWifiFailedReason(WiFi.status());
+      WiFi.disconnect(false);
+      delay(3500);
+      Display::wifiSetupBackToKeyboard();
+    }
+    // มีรหัส Wi-Fi เดิมอยู่แล้ว (เช่น เราเตอร์ดับชั่วคราว) -> รอสักพักแล้วลองต่อใหม่ (ยกเว้นกำลังพิมพ์อยู่)
+    if (!settings.wifiSsid.isEmpty() && millis() - portalStartedAt > PORTAL_RETRY_MS && !Display::wifiSetupBusy()) ESP.restart();
     return;
   }
 
