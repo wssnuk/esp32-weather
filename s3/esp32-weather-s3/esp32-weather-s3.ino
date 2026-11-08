@@ -16,6 +16,7 @@
 #include "improv.h"
 #include "autoupdate.h"
 #include "radar.h"
+#include "geo.h"
 #include "sound.h"
 #include "web.h"
 
@@ -93,6 +94,7 @@ static void printHelp() {
   Serial.println(F("  display        หมุนจอ (ถ้าภาพกลับด้าน)"));
   Serial.println(F("  preset         เลือกโหมดภาพใหม่ (ถ้าจอซีด/ไม่สว่าง) หรือ preset 1-4"));
   Serial.println(F("  vivid 0-3      เร่งสีและความสว่าง (0 ปิด, 3 จัดเต็ม)"));
+  Serial.println(F("  autoloc        หาตำแหน่งอัตโนมัติจากอินเทอร์เน็ตอีกครั้ง"));
   Serial.println(F("  sound          ทดสอบลำโพงใหม่"));
   Serial.println(F("  chime          เล่นเสียงเตือนฝนให้ฟัง"));
   Serial.println(F("  help           แสดงคำสั่ง"));
@@ -100,6 +102,8 @@ static void printHelp() {
 
 // ---------------- ฟังก์ชันที่ใช้ร่วมกับหน้าเว็บ ----------------
 void requestWeatherRefresh() { nextWeatherAt = millis(); }
+
+static void updateAddress();
 
 bool changeCity(const String& nameIn, String& message) {
   String name = nameIn;
@@ -118,12 +122,58 @@ bool changeCity(const String& nameIn, String& message) {
   settings.lat = lat;
   settings.lon = lon;
   Store::saveLocation(display, lat, lon);
+  if (!settings.locManual) { settings.locManual = true; Store::saveLocManual(true); }
+  updateAddress();
   Radar::setLocation(lat, lon);
   weather.valid = false;
   requestWeatherRefresh();
   message = "ตั้งเป็น " + display + " (" + String(lat, 3) + ", " + String(lon, 3) + ") แล้ว";
   Serial.println("[City] " + message);
   return true;
+}
+
+// อัปเดตชื่อพื้นที่ภาษาไทยของพิกัดปัจจุบัน
+static void updateAddress() {
+  Geo::Address a;
+  String err;
+  if (Geo::reverse(settings.lat, settings.lon, a, err)) {
+    settings.addrTh = Geo::shortThai(a);
+    Store::saveAddress(settings.addrTh);
+    if (!settings.locManual && a.latinName.length()) {
+      settings.city = a.latinName;
+      Store::saveLocation(settings.city, settings.lat, settings.lon);
+    }
+  } else {
+    Serial.println("[Geo] " + err);
+  }
+}
+
+void autoLocation(bool force) {
+  if (settings.locManual && !force) {
+    if (settings.addrTh.isEmpty()) updateAddress();
+    return;
+  }
+  if (force) { settings.locManual = false; Store::saveLocManual(false); }
+  Geo::Fix f;
+  String err;
+  if (!Geo::locate(f, err)) {
+    Serial.println("[Geo] " + err + " — ใช้ตำแหน่งเดิม");
+    if (settings.addrTh.isEmpty()) updateAddress();
+    return;
+  }
+  // ตำแหน่งจาก IP หยาบมาก: ถ้าเดิมมีพิกัดที่ห่างไม่เกิน 30 กม. ให้ใช้ของเดิม
+  double dy = (f.lat - settings.lat) * 111.0, dx = (f.lon - settings.lon) * 111.0 * cos(f.lat * DEG_TO_RAD);
+  bool moved = dx * dx + dy * dy > 0.05 * 0.05;
+  if (!f.fromWifi && dx * dx + dy * dy < 30.0 * 30.0 && !settings.addrTh.isEmpty()) moved = false;
+  if (moved || settings.addrTh.isEmpty()) {
+    settings.lat = f.lat;
+    settings.lon = f.lon;
+    Store::saveLocation(settings.city, f.lat, f.lon);
+    updateAddress();
+    Radar::setLocation(settings.lat, settings.lon);
+    weather.valid = false;
+    requestWeatherRefresh();
+  }
 }
 
 bool setExactLocation(double lat, double lon, const String& name, String& message) {
@@ -140,7 +190,10 @@ bool setExactLocation(double lat, double lon, const String& name, String& messag
   settings.city = n;
   settings.lat = lat;
   settings.lon = lon;
+  settings.locManual = true;
+  Store::saveLocManual(true);
   Store::saveLocation(n, lat, lon);
+  updateAddress();
   Radar::setLocation(lat, lon);
   weather.valid = false;
   requestWeatherRefresh();
@@ -268,6 +321,7 @@ static void processChar(char c) {
     else if (lower == "preset") Display::choosePreset();
     else if (lower.startsWith("preset ")) { Display::setPreset(cmd.substring(7).toInt() - 1); Serial.printf("[Display] โหมดภาพ %u\n", Display::preset() + 1); }
     else if (lower.startsWith("vivid ")) { Display::setVivid(cmd.substring(6).toInt()); Serial.printf("[Display] เร่งสี %u\n", Display::vivid()); }
+    else if (lower == "autoloc") { autoLocation(true); Serial.println("[Geo] ตำแหน่ง: " + settings.addrTh); }
     else if (lower == "sound") Sound::runTest();
     else if (lower == "chime") { Sound::play(Sound::MEL_RAIN); Serial.println("[Sound] " + Sound::status()); }
     else if (lower == "update") { if (!AutoUpdate::checkNow(true)) Serial.println(F("[Update] ไม่มีการอัปเดต")); }
@@ -380,6 +434,7 @@ void setup() {
       Store::saveLocation(settings.city, settings.lat, settings.lon);
     }
   }
+  autoLocation(false);  // หาตำแหน่งจากอินเทอร์เน็ต (ถ้าไม่ได้ตั้งเอง) + ชื่อตำบล/อำเภอ/จังหวัด
   Web::beginDashboard();
   Radar::setLocation(settings.lat, settings.lon);
   Radar::begin();

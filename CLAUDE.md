@@ -52,6 +52,11 @@ reply in Thai and keep user-facing strings (Serial, web UI) in Thai.
 - Radar (1.4.0+) is built ON THE DEVICE (radar.cpp task): RainViewer free API (max zoom 7 → 512 px tiles = z8 scale,
   colour scheme forced to Universal Blue; coverage tile alpha 0 = covered) over Esri World Dark Gray z8 + labels,
   centred on settings lat/lon. Rain rate from palette → dBZ → Marshall-Palmer mm/h. GitHub Actions only does market.json.
+- Auto location (1.5.0+, geo.cpp): Wi-Fi BSSID scan → BeaconDB geolocate (falls back to IP), then Thai address from
+  Nominatim (accept-language=th, classify by prefix ตำบล/แขวง, อำเภอ/เขต, จังหวัด) with BigDataCloud fallback.
+  Runs at boot unless the user set a location (Preferences "lman"); serial `autoloc` or /autoloc returns to auto.
+- Dynamic Thai text: TFONT in assets.h (12 px glyphs; mark offsets measured by rendering "ก"+mark minus "ก",
+  raised tones from "กิ"+tone) drawn by thaiText() in display.cpp.
 - Exact location: docs/loc.html (phone GPS, https) links to http://<board>/loc?lat&lon&name.
 - Sound: sound.cpp, ES8311 codec at I2C 0x18 on the touch bus (lgfx i2c port 1), I2S MCLK4 BCLK5 WS7, DOUT 6 or 8,
   PA enable GPIO1 (level tested). One-time tap test picks the config (Preferences "s3snd"). Chimes are synthesized

@@ -76,6 +76,7 @@ static const char PAGE_DASHBOARD[] PROGMEM = R"HTML(<!doctype html><html lang="t
   <div class="muted" id="updated">-</div>
   <button class="sec" onclick="refreshNow()">🔄 อัปเดตเดี๋ยวนี้</button>
   <p><a id="gps" href="#" style="display:block;text-align:center;padding:12px;border-radius:10px;background:#1f6feb;color:#fff;text-decoration:none">📍 ใช้ตำแหน่ง GPS ของมือถือ (แม่นที่สุด)</a></p>
+  <p><a href="/autoloc" style="display:block;text-align:center;padding:10px;border-radius:10px;border:1px solid #1f6feb;color:#1f6feb;text-decoration:none">🌐 หาตำแหน่งอัตโนมัติจากอินเทอร์เน็ต</a></p>
   <script>document.getElementById('gps').href='https://wssnuk.github.io/esp32-weather/loc.html?dev='+location.host;</script>
   <form method="post" action="/city"><label>เปลี่ยนเมือง</label>
   <input name="city" placeholder="เช่น Chiang Mai, ภูเก็ต" required><button>เปลี่ยนเมือง</button></form>
@@ -87,7 +88,7 @@ const $=id=>document.getElementById(id), fx=(v,d=1)=>v==null?'-':Number(v).toFix
 async function load(){
   try{
     const w=await (await fetch('/api/weather')).json();
-    $('city').textContent='📍 '+w.city;
+    $('city').textContent='📍 '+(w.address||w.city)+' ('+w.lat.toFixed(4)+', '+w.lon.toFixed(4)+')'+(w.auto?' · อัตโนมัติ':' · ตั้งเอง');
     $('dev').textContent='อุปกรณ์: '+w.device.ip+' · Wi-Fi '+w.device.rssi+' dBm · ทำงานมา '+Math.floor(w.device.uptime/60)+' นาที';
     if(!w.valid){$('desc').textContent=w.error?('ดึงข้อมูลไม่สำเร็จ: '+w.error):'กำลังโหลดข้อมูล...';return;}
     $('icon').textContent=w.icon; $('temp').textContent=fx(w.temp)+'°';

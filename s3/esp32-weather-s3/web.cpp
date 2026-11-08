@@ -89,6 +89,10 @@ void handleDashboard() { server.send_P(200, "text/html; charset=utf-8", PAGE_DAS
 void handleApi() {
   JsonDocument doc;
   doc["city"] = settings.city;
+  doc["address"] = settings.addrTh;
+  doc["lat"] = settings.lat;
+  doc["lon"] = settings.lon;
+  doc["auto"] = !settings.locManual;
   doc["lat"] = settings.lat;
   doc["lon"] = settings.lon;
   doc["valid"] = weather.valid;
@@ -182,6 +186,11 @@ void handleLoc() {
   sendMessage(ok ? "ตั้งตำแหน่งแล้ว ✅" : "ไม่สำเร็จ", msg);
 }
 
+void handleAutoLoc() {
+  autoLocation(true);
+  sendMessage("หาตำแหน่งอัตโนมัติแล้ว ✅", settings.addrTh + " (" + String(settings.lat, 4) + ", " + String(settings.lon, 4) + ")");
+}
+
 void handleWifiReset() {
   sendMessage("กำลังเข้าโหมดตั้งค่า",
               "ให้เชื่อมต่อ Wi-Fi ชื่อ \"" SETUP_AP_SSID "\" จากโทรศัพท์ แล้วตั้งค่าใหม่", "");
@@ -211,6 +220,7 @@ void beginDashboard() {
   server.on("/refresh", HTTP_POST, handleRefresh);
   server.on("/city", HTTP_POST, handleCity);
   server.on("/loc", handleLoc);
+  server.on("/autoloc", handleAutoLoc);
   server.on("/wifi-reset", handleWifiReset);
   server.onNotFound([]() { server.send(404, "text/plain", "Not found"); });
   server.begin();

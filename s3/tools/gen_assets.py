@@ -461,6 +461,59 @@ def pack4(m):
     return bytes(data)
 
 
+# ---------------------------------------------------------------- ฟอนต์ไทยสำหรับข้อความที่เปลี่ยนได้ (ที่อยู่ ตำบล/อำเภอ/จังหวัด)
+# จอวางสระบน/ล่าง/วรรณยุกต์เองไม่ได้ จึงหาตำแหน่งจากการเรนเดอร์จริง:
+#   เครื่องหมาย = ภาพ("ก"+เครื่องหมาย) − ภาพ("ก")  → ตำแหน่งเทียบกับปากกาหลังพยัญชนะ
+#   วรรณยุกต์ที่ยกสูง = ภาพ("กิ"+วรรณยุกต์) − ภาพ("กิ")
+TF_ABOVE = [0x0E31, 0x0E34, 0x0E35, 0x0E36, 0x0E37, 0x0E47, 0x0E4D, 0x0E4E]
+TF_TONE = [0x0E48, 0x0E49, 0x0E4A, 0x0E4B, 0x0E4C]
+TF_BELOW = [0x0E38, 0x0E39, 0x0E3A]
+
+
+def tfont(px):
+    f = ImageFont.truetype(FR, px)
+    OX, OY, CW, CH = 30, 60, 160, 90
+
+    def rend(t):
+        m = Image.new('L', (CW, CH), 0)
+        ImageDraw.Draw(m).text((OX, OY), t, font=f, fill=255, anchor='ls')
+        return m
+
+    def cut(m, pen):
+        bb = m.getbbox()
+        if not bb:
+            return None
+        g = crisp(m.crop(bb))
+        return g, bb[0] - pen, bb[1] - OY
+
+    glyphs = []  # (cp, kind, dx, dy, w, h, adv, data)  kind 0 = ฐาน, 1 = เครื่องหมาย, 2 = วรรณยุกต์ยกสูง
+    base_cps = [c for c in range(0x0E01, 0x0E5C) if c not in TF_ABOVE + TF_TONE + TF_BELOW and chr(c).isprintable()]
+    base_cps = [c for c in base_cps if c not in (0x0E33,)] + [ord(c) for c in ' .-,()/0123456789']
+    for cp in base_cps:
+        ch = chr(cp)
+        adv = int(round(f.getlength(ch)))
+        r = cut(rend(ch), OX)
+        if r is None:
+            glyphs.append((cp, 0, 0, 0, 0, 0, adv, b''))
+            continue
+        g, dx, dy = r
+        glyphs.append((cp, 0, dx, dy, g.size[0], g.size[1], adv, pack4(g)))
+    ref = rend('ก')
+    pen = OX + int(round(f.getlength('ก')))
+    for cp in TF_ABOVE + TF_TONE + TF_BELOW:
+        r = cut(ImageChops.subtract(rend('ก' + chr(cp)), ref), pen)
+        if r:
+            g, dx, dy = r
+            glyphs.append((cp, 1, dx, dy, g.size[0], g.size[1], 0, pack4(g)))
+    ref2 = rend('กิ')
+    for cp in TF_TONE:
+        r = cut(ImageChops.subtract(rend('กิ' + chr(cp)), ref2), pen)
+        if r:
+            g, dx, dy = r
+            glyphs.append((cp, 2, dx, dy, g.size[0], g.size[1], 0, pack4(g)))
+    return glyphs
+
+
 # ---------------------------------------------------------------- เขียน header
 def carray(name, data):
     lines = [f'static const uint8_t {name}[] PROGMEM = {{']
@@ -518,6 +571,17 @@ def main():
         total += len(v)
         parts.append(carray(f'VLW_{px}', v))
     # thai texts
+    # ฟอนต์ไทยแบบไดนามิก
+    tg = tfont(12)
+    ents = []
+    for i, (cp, kind, dx, dy, w, h, adv, data) in enumerate(tg):
+        if data:
+            parts.append(carray(f'TF_{i}', data))
+            total += len(data)
+        ents.append(f'  {{{cp}, {kind}, {dx}, {dy}, {w}, {h}, {adv}, {f"TF_{i}" if data else "nullptr"}}},')
+    parts.append('struct TfGlyph { uint16_t cp; uint8_t kind; int8_t dx, dy; uint8_t w, h, adv; const uint8_t* data; };')
+    parts.append('static const TfGlyph TFONT[] = {\n' + '\n'.join(ents) + '\n};')
+    parts.append(f'constexpr int TFONT_N = {len(tg)};')
     entries, enum = [], []
     for key, t, px, b in TEXTS:
         m = thai_alpha(t, px, b)

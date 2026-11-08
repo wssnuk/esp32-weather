@@ -573,39 +573,104 @@ void drawTicker() {
 }
 
 // จุด LIVE + เวลาที่อัปเดตล่าสุด
-void drawFreshness(int xr, int y) {
-  if (!Wx || !Wx->valid || !Wx->fetchedAt) return;
+// คืนค่าขอบซ้ายที่ใช้ไป (ให้ข้อความที่อยู่ไม่ทับ)
+int drawFreshness(int xr, int y) {
+  if (!Wx || !Wx->valid || !Wx->fetchedAt) return xr;
   int mins = (millis() - Wx->fetchedAt) / 60000;
   int x = xr;
-  if (mins < 1) {
-    x -= thaiW(TH_JUST_NOW);
-    thai(TH_JUST_NOW, x, y, C_MUTED);
-  } else {
-    x -= thaiW(TH_MIN_AGO);
-    thai(TH_MIN_AGO, x, y, C_MUTED);
+  if (mins >= 1) {
+    x -= thaiW(TH_R_MIN);
+    thai(TH_R_MIN, x, y, C_MUTED);
     String m = String(mins);
-    x -= txtW(m, 9) + 3;
+    x -= txtW(m, 9) + 2;
     txt(m, x, y, 9, C_WHITE, middle_left);
-    x -= thaiW(TH_UPD) + 3;
-    thai(TH_UPD, x, y, C_MUTED);
   }
   // จุดกะพริบแบบ LIVE
   float ph = (millis() % 1500) / 1500.0f;
   uint8_t a = 80 + (uint8_t)(175 * (0.5f + 0.5f * cosf(ph * 6.283f)));
   g->fillSmoothCircle(x - 8, y, 4, g->color888(0, a * 230 / 255, a));
   g->fillSmoothCircle(x - 8, y, 2, C_WHITE);
+  return x - 14;
+}
+
+// ---------------- ข้อความไทยที่เปลี่ยนได้ (ที่อยู่) ----------------
+const TfGlyph* tfFind(uint16_t cp, uint8_t kind) {
+  for (int i = 0; i < TFONT_N; i++) if (TFONT[i].cp == cp && TFONT[i].kind == kind) return &TFONT[i];
+  return nullptr;
+}
+void tfBlit(const TfGlyph* gl, int x, int y, uint32_t col) {
+  if (!gl || !gl->data) return;
+  uint8_t fr = col >> 16, fg = (col >> 8) & 0xFF, fb = col & 0xFF;
+  int rb = (gl->w + 1) / 2;
+  for (int yy = 0; yy < gl->h; yy++)
+    for (int xx = 0; xx < gl->w; xx++) {
+      uint8_t v = pgm_read_byte(gl->data + yy * rb + xx / 2);
+      uint8_t a = (xx & 1) ? (v & 0x0F) : (v >> 4);
+      if (!a) continue;
+      int px = x + gl->dx + xx, py = y + gl->dy + yy;
+      if (px < 0 || px >= 320 || py < 0 || py >= 240) continue;
+      if (a == 15) { g->drawPixel(px, py, g->color888(fr, fg, fb)); continue; }
+      auto b = g->readPixelRGB(px, py);
+      g->drawPixel(px, py, g->color888(b.R8() + (fr - b.R8()) * a / 15, b.G8() + (fg - b.G8()) * a / 15, b.B8() + (fb - b.B8()) * a / 15));
+    }
+}
+// วาดข้อความ UTF-8 (ไทย/ตัวเลข) ที่เส้นฐาน y คืนค่าความกว้าง; draw=false = วัดอย่างเดียว
+int thaiText(const String& s, int x, int y, uint32_t col, bool draw = true) {
+  int pen = x;
+  bool upper = false;
+  const uint8_t* p = (const uint8_t*)s.c_str();
+  while (*p) {
+    uint32_t cp;
+    if (*p < 0x80) cp = *p++;
+    else if ((*p & 0xE0) == 0xC0) { cp = (*p & 0x1F) << 6 | (p[1] & 0x3F); p += 2; }
+    else if ((*p & 0xF0) == 0xE0) { cp = (*p & 0x0F) << 12 | (p[1] & 0x3F) << 6 | (p[2] & 0x3F); p += 3; }
+    else { p++; continue; }
+    if (cp == 0x0E33) {  // ำ = นิคหิต + า
+      if (draw) tfBlit(tfFind(0x0E4D, 1), pen, y, col);
+      cp = 0x0E32;
+    }
+    const TfGlyph* mk = tfFind(cp, 1);
+    if (mk) {
+      bool tone = cp >= 0x0E48 && cp <= 0x0E4C;
+      const TfGlyph* hi = tone && upper ? tfFind(cp, 2) : nullptr;
+      if (draw) tfBlit(hi ? hi : mk, pen, y, col);
+      if (!tone && cp != 0x0E38 && cp != 0x0E39 && cp != 0x0E3A) upper = true;
+      continue;
+    }
+    const TfGlyph* gl = tfFind(cp, 0);
+    if (!gl) continue;
+    if (draw) tfBlit(gl, pen, y, col);
+    pen += gl->adv;
+    upper = false;
+  }
+  return pen - x;
 }
 
 void drawHome() {
   beginFrame(BG_HOME);
   struct tm t;
   bool haveTime = getLocalTime(&t, 0);
-  String city = S ? S->city : String("");
-  int comma = city.indexOf(',');
-  if (comma > 0) city = city.substring(0, comma);
-  txt(city, 12, 11, 11, C_GOLD, middle_left);
   drawWifi(296, 15);
-  drawFreshness(284, 11);
+  int room = drawFreshness(284, 11) - 22;
+  // ที่อยู่ ตำบล/อำเภอ/จังหวัด (ย่อลงถ้ายาวเกิน)
+  String addr = S ? S->addrTh : String("");
+  if (addr.length()) {
+    g->fillSmoothCircle(15, 10, 3, C_RED);
+    g->fillTriangle(12, 11, 18, 11, 15, 17, C_RED);
+    g->fillSmoothCircle(15, 10, 1, C_WHITE);
+    String a = addr;
+    while (thaiText(a, 22, 15, C_GOLD, false) > room) {
+      int sp = a.lastIndexOf(' ');
+      if (sp <= 0) break;
+      a = a.substring(0, sp);  // ตัดจังหวัด/อำเภอท้ายออกถ้ายาวเกิน
+    }
+    thaiText(a, 22, 15, C_GOLD);
+  } else {
+    String city = S ? S->city : String("");
+    int comma = city.indexOf(',');
+    if (comma > 0) city = city.substring(0, comma);
+    txt(city, 12, 11, 11, C_GOLD, middle_left);
+  }
   char hm[6] = "--:--", sec[4] = ":--";
   if (haveTime) {
     snprintf(hm, sizeof(hm), "%02d:%02d", t.tm_hour, t.tm_min);

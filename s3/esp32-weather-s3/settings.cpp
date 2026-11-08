@@ -17,6 +17,8 @@ void load(Settings& s) {
   s.lat = prefs.getDouble("lat", DEFAULT_LAT);
   s.lon = prefs.getDouble("lon", DEFAULT_LON);
   s.displayMode = prefs.getUChar("disp", DEFAULT_DISPLAY_MODE);
+  s.addrTh = prefs.getString("addr", "");
+  s.locManual = prefs.getBool("lman", false);
   prefs.end();
 }
 
@@ -45,6 +47,18 @@ void clearWifi() {
 void saveDisplayMode(uint8_t mode) {
   prefs.begin(NS, false);
   prefs.putUChar("disp", mode);
+  prefs.end();
+}
+
+void saveAddress(const String& addrTh) {
+  prefs.begin(NS, false);
+  prefs.putString("addr", addrTh);
+  prefs.end();
+}
+
+void saveLocManual(bool manual) {
+  prefs.begin(NS, false);
+  prefs.putBool("lman", manual);
   prefs.end();
 }
 
