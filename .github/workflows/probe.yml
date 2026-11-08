@@ -1,5 +1,7 @@
 name: radar probe (dev)
 on: workflow_dispatch
+permissions:
+  contents: write
 jobs:
   probe:
     runs-on: ubuntu-latest
@@ -13,7 +15,7 @@ jobs:
             curl -sfL -A "Mozilla/5.0" -o "$f" "https://www.lcdwiki.com/res/ES3C28P/$f" && pdftoppm -r 200 -png "$f" "${f%.pdf}" && pdftotext -layout "$f" "${f%.pdf}.txt"
           done
           ls -la
-      - uses: actions/upload-artifact@v4
-        with:
-          name: drawings
-          path: out
+      - name: Publish to probe-out branch
+        run: |
+          cd out && rm -f *.pdf && git init -q -b probe-out && git add . && git -c user.name=bot -c user.email=actions@github.com commit -q -m probe
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" probe-out
