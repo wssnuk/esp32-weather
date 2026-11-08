@@ -14,6 +14,8 @@
 #include "display.h"
 #include "improv.h"
 #include "autoupdate.h"
+#include "radar.h"
+#include "sound.h"
 #include "web.h"
 
 Settings settings;
@@ -87,7 +89,10 @@ static void printHelp() {
   Serial.println(F("  status         ดูสถานะบอร์ด"));
   Serial.println(F("  setwifi        ตั้งค่า Wi-Fi ผ่านหน้านี้ (ไม่ต้องใช้มือถือ)"));
   Serial.println(F("  wifi           ล้างการตั้งค่า Wi-Fi แล้วเข้าโหมดตั้งค่า"));
-  Serial.println(F("  display        เปลี่ยนโหมดจอ (ถ้าสีเพี้ยนหรือจอไม่ขึ้น)"));
+  Serial.println(F("  display        หมุนจอ (ถ้าภาพกลับด้าน)"));
+  Serial.println(F("  preset         เลือกโหมดภาพใหม่ (ถ้าจอซีด/ไม่สว่าง) หรือ preset 1-4"));
+  Serial.println(F("  sound          ทดสอบลำโพงใหม่"));
+  Serial.println(F("  chime          เล่นเสียงเตือนฝนให้ฟัง"));
   Serial.println(F("  help           แสดงคำสั่ง"));
 }
 
@@ -234,12 +239,17 @@ static void processChar(char c) {
       WiFi.scanDelete();
     }
     else if (lower == "display") nextDisplayMode();
+    else if (lower == "preset") Display::choosePreset();
+    else if (lower.startsWith("preset ")) { Display::setPreset(cmd.substring(7).toInt() - 1); Serial.printf("[Display] โหมดภาพ %u\n", Display::preset() + 1); }
+    else if (lower == "sound") Sound::runTest();
+    else if (lower == "chime") { Sound::play(Sound::MEL_RAIN); Serial.println("[Sound] " + Sound::status()); }
     else if (lower == "update") { if (!AutoUpdate::checkNow(true)) Serial.println(F("[Update] ไม่มีการอัปเดต")); }
     else if (lower == "status") {
       Serial.printf("เวอร์ชัน %s | โหมด %s | IP %s | RSSI %d dBm | RAM ว่าง %u bytes | ทำงานมา %lu วินาที\n",
                     APP_VERSION, portalMode ? "ตั้งค่า" : "ปกติ",
                     (portalMode ? WiFi.softAPIP() : WiFi.localIP()).toString().c_str(), WiFi.RSSI(),
                     ESP.getFreeHeap(), millis() / 1000);
+      Serial.printf("โหมดภาพ %u | เสียง: %s\n", Display::preset() + 1, Sound::status().c_str());
     } else if (lower.startsWith("city ")) {
       if (portalMode) { Serial.println(F("ต้องเชื่อมต่อ Wi-Fi ก่อน")); return; }
       String msg;
@@ -267,6 +277,27 @@ static void handleButton() {
   }
 }
 
+// เตือนด้วยเสียงเมื่อแผนที่ฝนเห็นฝนกำลังเข้ามา/เริ่มตกบริเวณนี้ (ไม่เกินชั่วโมงละครั้ง ไม่เตือนกลางคืน)
+static void radarAlert() {
+  static uint32_t seenGen = 0;
+  static unsigned long lastAlert = 0;
+  static bool wasRaining = false, wasComing = false;
+  const RadarData* d = Radar::get();
+  if (!d || !d->valid || d->generated == seenGen || !Radar::usableAt(settings.lat, settings.lon)) return;
+  seenGen = d->generated;
+  bool coming = d->approaching && d->etaMin > 0 && d->etaMin <= 60;
+  bool trigger = (d->rainingHere && !wasRaining) || (coming && !wasComing);
+  wasRaining = d->rainingHere;
+  wasComing = coming;
+  struct tm t;
+  bool night = getLocalTime(&t, 0) && (t.tm_hour >= NIGHT_START_HOUR || t.tm_hour < NIGHT_END_HOUR);
+  if (trigger && !night && (lastAlert == 0 || millis() - lastAlert > 3600000UL)) {
+    lastAlert = millis();
+    Serial.println(F("[Radar] เตือน: มีฝนกำลังเข้ามา/เริ่มตกบริเวณนี้"));
+    Sound::play(Sound::MEL_RAIN);
+  }
+}
+
 // ---------------- setup / loop ----------------
 void setup() {
   Serial.begin(115200);
@@ -282,8 +313,14 @@ void setup() {
   Display::showBoot(APP_VERSION);
   // ช่วงหน้าจอเริ่มต้น: แตะค้างเพื่อเปลี่ยนโหมดจอได้ แม้ยังไม่ได้ตั้งค่า Wi-Fi
   for (unsigned long t = millis(); millis() - t < 2500;) {
-    if (Display::loop() == Display::Touch::LongPress) nextDisplayMode();
+    if (Display::loop() == Display::Touch::LongPress) Display::choosePreset();
     delay(10);
+  }
+  // ครั้งแรกหลังอัปเดต: ให้ผู้ใช้เลือกโหมดภาพที่สว่างที่สุด แล้วทดสอบลำโพง
+  if (Display::needsPresetChoice()) Display::choosePreset();
+  if (Sound::begin()) {
+    if (Sound::needsTest()) Sound::runTest();
+    else Sound::play(Sound::MEL_BOOT);
   }
   if (!connectWifi()) {
     startPortal();
@@ -302,6 +339,7 @@ void setup() {
     }
   }
   Web::beginDashboard();
+  Radar::begin();
   Display::showLoading();
   printHelp();
   requestWeatherRefresh();
@@ -313,7 +351,8 @@ void loop() {
   handleButton();
 
   Display::Touch touch = Display::loop();
-  if (touch == Display::Touch::LongPress) nextDisplayMode();
+  if (touch == Display::Touch::LongPress) Display::choosePreset();
+  Sound::loop();
 
   if (portalMode) {
     // ตั้งค่า Wi-Fi บนจอสัมผัส
@@ -352,6 +391,7 @@ void loop() {
 
   if (touch == Display::Touch::Tap) Display::nextPage();
   AutoUpdate::loop();
+  radarAlert();
 
   // ข้อมูลตลาด (ทอง/หุ้น) แยกรอบจากข้อมูลอากาศ
   if (weather.fetchedAt != 0 && (long)(millis() - nextMarketAt) >= 0) {
@@ -388,7 +428,7 @@ void loop() {
     if (ok && weather.rainNext2h >= RAIN_ALERT_PERCENT) {
       struct tm t;
       bool night = getLocalTime(&t, 0) && (t.tm_hour >= NIGHT_START_HOUR || t.tm_hour < NIGHT_END_HOUR);
-      if (!rainAlerted && !night) Display::beep();
+      if (!rainAlerted && !night) Sound::play(Sound::MEL_RAIN);
       rainAlerted = true;
     } else if (ok && weather.rainNext2h >= 0 && weather.rainNext2h < RAIN_ALERT_PERCENT - 20) {
       rainAlerted = false;

@@ -8,6 +8,7 @@
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
 #include "assets.h"
+#include "radar.h"
 #include "config.h"
 #include <Preferences.h>
 
@@ -21,22 +22,95 @@
 
 namespace {
 
-// ชุดคำสั่งเริ่มจอแบบเดียวกับโปรแกรมตรวจบอร์ดที่ใช้งานได้จริง
+// "โหมดภาพ" = ชุดคำสั่งเริ่มจอ (แรงดัน/แกมมา) จอแต่ละล็อตต้องใช้ชุดต่างกัน ไม่งั้นภาพจะซีด/มืด
+uint8_t panelPreset = 0;
+constexpr uint8_t PRESET_COUNT = 4;
+constexpr uint8_t CMD_DELAY = 0x80;
+// 0: ชุดสั้นแบบเดิม (เวอร์ชัน 1.0-1.2)
+const uint8_t P_OLD[] = {
+    0x01, 0 + CMD_DELAY, 150,
+    0xCF, 3, 0x00, 0xC1, 0x30,
+    0xC0, 1, 0x23,
+    0xC1, 1, 0x10,
+    0xC5, 2, 0x3E, 0x28,
+    0x11, 0 + CMD_DELAY, 120,
+    0x13, 0,
+    0x29, 0,
+    0xFF, 0xFF,
+};
+// 1: ILI9341V จอ IPS (ชุดของผู้ผลิตจอ — แรงดัน+แกมมาสำหรับจอ IPS)
+const uint8_t P_IPS[] = {
+    0x01, 0 + CMD_DELAY, 150,
+    0xCF, 3, 0x00, 0xC1, 0x30,
+    0xED, 4, 0x64, 0x03, 0x12, 0x81,
+    0xE8, 3, 0x85, 0x00, 0x78,
+    0xCB, 5, 0x39, 0x2C, 0x00, 0x34, 0x02,
+    0xF7, 1, 0x20,
+    0xEA, 2, 0x00, 0x00,
+    0xC0, 1, 0x13,
+    0xC1, 1, 0x13,
+    0xC5, 2, 0x22, 0x35,
+    0xC7, 1, 0xBD,
+    0xB6, 2, 0x0A, 0xA2,
+    0xF6, 2, 0x01, 0x30,
+    0xB1, 2, 0x00, 0x1B,
+    0xF2, 1, 0x00,
+    0x26, 1, 0x01,
+    0xE0, 15, 0x0F, 0x35, 0x31, 0x0B, 0x0E, 0x06, 0x49, 0xA7, 0x33, 0x07, 0x0F, 0x03, 0x0C, 0x0A, 0x00,
+    0xE1, 15, 0x00, 0x0A, 0x0F, 0x04, 0x11, 0x08, 0x36, 0x58, 0x4D, 0x07, 0x10, 0x0C, 0x32, 0x34, 0x0F,
+    0x11, 0 + CMD_DELAY, 120,
+    0x29, 0 + CMD_DELAY, 50,
+    0xFF, 0xFF,
+};
+// 2: ILI9341 มาตรฐาน (มีแกมมาเต็มชุด)
+const uint8_t P_ILI[] = {
+    0x01, 0 + CMD_DELAY, 150,
+    0xEF, 3, 0x03, 0x80, 0x02,
+    0xCF, 3, 0x00, 0xC1, 0x30,
+    0xED, 4, 0x64, 0x03, 0x12, 0x81,
+    0xE8, 3, 0x85, 0x00, 0x78,
+    0xCB, 5, 0x39, 0x2C, 0x00, 0x34, 0x02,
+    0xF7, 1, 0x20,
+    0xEA, 2, 0x00, 0x00,
+    0xC0, 1, 0x23,
+    0xC1, 1, 0x10,
+    0xC5, 2, 0x3E, 0x28,
+    0xC7, 1, 0x86,
+    0xB1, 2, 0x00, 0x13,
+    0xF2, 1, 0x00,
+    0x26, 1, 0x01,
+    0xE0, 15, 0x0F, 0x31, 0x2B, 0x0C, 0x0E, 0x08, 0x4E, 0xF1, 0x37, 0x07, 0x10, 0x03, 0x0E, 0x09, 0x00,
+    0xE1, 15, 0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1, 0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F,
+    0xB6, 3, 0x08, 0xC2, 0x27,
+    0x11, 0 + CMD_DELAY, 120,
+    0x29, 0 + CMD_DELAY, 50,
+    0xFF, 0xFF,
+};
+// 3: ST7789 (บางล็อตใช้ชิปนี้แทน)
+const uint8_t P_ST[] = {
+    0x01, 0 + CMD_DELAY, 150,
+    0xB2, 5, 0x0C, 0x0C, 0x00, 0x33, 0x33,
+    0xB7, 1, 0x35,
+    0xBB, 1, 0x28,
+    0xC0, 1, 0x0C,
+    0xC2, 2, 0x01, 0xFF,
+    0xC3, 1, 0x10,
+    0xC4, 1, 0x20,
+    0xC6, 1, 0x0F,
+    0xD0, 2, 0xA4, 0xA1,
+    0xE0, 14, 0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x32, 0x44, 0x42, 0x06, 0x0E, 0x12, 0x14, 0x17,
+    0xE1, 14, 0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x31, 0x54, 0x47, 0x0E, 0x1C, 0x17, 0x1B, 0x1E,
+    0x11, 0 + CMD_DELAY, 130,
+    0x13, 0,
+    0x29, 0 + CMD_DELAY, 50,
+    0xFF, 0xFF,
+};
+const uint8_t* const PRESETS[PRESET_COUNT] = {P_OLD, P_IPS, P_ILI, P_ST};
+
 class PanelS3 : public lgfx::Panel_ILI9341 {
  protected:
   const uint8_t* getInitCommands(uint8_t listno) const override {
-    static constexpr uint8_t list0[] = {
-        0x01, 0 + CMD_INIT_DELAY, 150,          // software reset
-        0xCF, 3, 0x00, 0xC1, 0x30,              // power control B
-        0xC0, 1, 0x23,                          // power control 1
-        0xC1, 1, 0x10,                          // power control 2
-        0xC5, 2, 0x3E, 0x28,                    // VCOM
-        CMD_SLPOUT, 0 + CMD_INIT_DELAY, 120,
-        CMD_NORON, 0,
-        CMD_DISPON, 0,
-        0xFF, 0xFF,
-    };
-    return listno == 0 ? list0 : nullptr;
+    return listno == 0 ? PRESETS[panelPreset % PRESET_COUNT] : nullptr;
   }
 };
 
@@ -299,9 +373,12 @@ void endFrame() {
 }
 
 int page = 0;  // ประกาศล่วงหน้า (ค่าจริงอยู่ด้านล่าง)
+const Settings* S = nullptr;
+const Weather* Wx = nullptr;
+const AirQuality* A = nullptr;
 void pageDots(int cx, int y) {
-  for (int i = 0; i < 4; i++) {
-    int x = cx - 15 + i * 10;
+  for (int i = 0; i < 5; i++) {
+    int x = cx - 20 + i * 10;
     if (i == page) g->fillSmoothCircle(x, y, 3, C_TEAL);
     else g->drawCircle(x, y, 2, RGB(140, 150, 180));
   }
@@ -316,11 +393,8 @@ void headerClock() {
 }
 
 // ---------------- สถานะ ----------------
-const Settings* S = nullptr;
-const Weather* Wx = nullptr;
-const AirQuality* A = nullptr;
-constexpr int PAGE_COUNT = 4;
-enum { PAGE_HOME = 0, PAGE_SUM, PAGE_NOW, PAGE_FC };
+constexpr int PAGE_COUNT = 5;
+enum { PAGE_HOME = 0, PAGE_SUM, PAGE_RADAR, PAGE_NOW, PAGE_FC };
 
 enum Screen { SCR_NONE, SCR_WEATHER, SCR_MESSAGE, SCR_SETUP } screen = SCR_NONE;
 bool updating = false;
@@ -337,6 +411,15 @@ void drawWifi(int x, int y) {
     g->fillSmoothRoundRect(x + i * 5, y - 3 - i * 3, 3, 4 + i * 3, 1, i < bars ? C_TEAL : RGB(70, 80, 100));
 }
 
+// ข้อมูลแผนที่ฝนที่ใช้ได้กับเมืองที่ตั้งไว้ และยังไม่เก่าเกิน 45 นาที
+const RadarData* radarHere() {
+  const RadarData* d = Radar::get();
+  if (!d || !d->valid || !S || !Radar::usableAt(S->lat, S->lon)) return nullptr;
+  time_t now = time(nullptr);
+  if (now > 1700000000 && now - (time_t)d->generated > 45 * 60) return nullptr;
+  return d;
+}
+
 void drawTicker() {
   const Weather& w = *Wx;
   int code = w.weatherCode;
@@ -346,9 +429,23 @@ void drawTicker() {
     if (w.hRain[i] >= 60) { at = i; break; }
   uint32_t dot = C_TEAL;
   int x = 38, y = 212;
+  const RadarData* rd = radarHere();
   if (updating) {
     thai(TH_T_UPDATING, x, y, C_MUTED);
-  } else if (rainingNow) {
+  } else if (rd && rd->approaching && rd->etaMin > 0 && !isnan(rd->nearestKm)) {
+    // แผนที่ฝนเห็นกลุ่มฝนกำลังเคลื่อนเข้ามา
+    dot = C_FEEL;
+    thai(TH_T_RADAR_A, x, y, RGB(255, 225, 200));
+    x += thaiW(TH_T_RADAR_A) + 5;
+    String km = String((int)roundf(rd->nearestKm));
+    txt(km, x, y, 11, C_WHITE, middle_left);
+    x += txtW(km, 11) + 5;
+    thai(TH_T_RADAR_B, x, y, RGB(255, 225, 200));
+    x += thaiW(TH_T_RADAR_B) + 5;
+    txt(String(rd->etaMin), x, y, 11, C_GOLD, middle_left);
+    x += txtW(String(rd->etaMin), 11) + 5;
+    thai(TH_T_RADAR_C, x, y, RGB(255, 225, 200));
+  } else if (rainingNow || (rd && rd->rainingHere)) {
     dot = C_RAIN;
     thai(TH_T_RAIN_NOW, x, y, RGB(210, 230, 255));
   } else if (at >= 0) {
@@ -556,7 +653,119 @@ void drawSummary() {
   endFrame();
 }
 
-// ---------------- หน้า 2: อากาศตอนนี้ ----------------
+
+// ---------------- หน้า 3: แผนที่ฝน ----------------
+constexpr int MAP_X = 8, MAP_Y = 28, MAP_W = 224, MAP_H = 204, MAP_CX = MAP_X + MAP_W / 2, MAP_CY = MAP_Y + MAP_H / 2;
+LGFX_Sprite* rframes[4] = {};
+uint32_t rframesGen = 0;
+
+bool ensureRadarFrames(const RadarData* d) {
+  if (!d) return false;
+  if (rframesGen == d->generated && rframes[0]) return true;
+  for (int i = 0; i < 4; i++) {
+    if (!rframes[i]) {
+      rframes[i] = new LGFX_Sprite(gfx);
+      rframes[i]->setColorDepth(16);
+      rframes[i]->setPsram(true);
+      if (!rframes[i]->createSprite(MAP_W, MAP_H)) { delete rframes[i]; rframes[i] = nullptr; return false; }
+    }
+    rframes[i]->fillScreen(0);
+    rframes[i]->drawJpg(d->jpg[i], d->len[i], 0, 0);
+  }
+  rframesGen = d->generated;
+  return true;
+}
+
+// เส้นโปร่งแสง (ผสมกับภาพด้านล่าง)
+void blendLine(float x0, float y0, float x1, float y1, uint32_t col, uint8_t a) {
+  int n = (int)max(fabsf(x1 - x0), fabsf(y1 - y0));
+  uint8_t r = col >> 16, gg = (col >> 8) & 0xFF, b = col & 0xFF;
+  for (int i = 0; i <= n; i++) {
+    int x = (int)roundf(x0 + (x1 - x0) * i / max(1, n)), y = (int)roundf(y0 + (y1 - y0) * i / max(1, n));
+    auto c = g->readPixelRGB(x, y);
+    g->drawPixel(x, y, g->color888(c.R8() + (r - c.R8()) * a / 255, c.G8() + (gg - c.G8()) * a / 255, c.B8() + (b - c.B8()) * a / 255));
+  }
+}
+
+void drawRadar() {
+  beginFrame(BG_RADAR);
+  headerClock();
+  const RadarData* d = Radar::get();
+  bool here = d && d->valid && S && Radar::usableAt(S->lat, S->lon);
+  if (!here || !ensureRadarFrames(d)) {
+    thai(d && d->valid ? TH_R_OUTSIDE : TH_R_NODATA, MAP_CX, MAP_CY, C_MUTED, 1);
+    endFrame();
+    return;
+  }
+  unsigned long now = millis();
+  // ภาพเคลื่อนไหว 4 เฟรม (เฟรมล่าสุดค้างนานกว่า)
+  int phase = (now / 650) % 6;
+  int fi = phase >= 3 ? 3 : phase;
+  rframes[fi]->pushSprite(g, MAP_X, MAP_Y);
+  // วงรัศมี 10/20/30 กม.
+  float ppk = 1.0f / d->kmPerPx;
+  for (int k = 1; k <= 3; k++) {
+    int r = (int)(k * 10 * ppk);
+    g->drawCircle(MAP_CX, MAP_CY, r, RGB(70, 120, 150));
+    txt(String(k * 10), MAP_CX + (int)(r * 0.707f) + 2, MAP_CY - (int)(r * 0.707f) - 2, 9, RGB(140, 190, 220), bottom_left);
+  }
+  g->drawFastHLine(MAP_CX - 98, MAP_CY, 196, RGB(40, 70, 90));
+  g->drawFastVLine(MAP_CX, MAP_CY - 98, 196, RGB(40, 70, 90));
+  // เส้นกวาดเรดาร์ + หางเรืองแสง
+  float ang = (now % 4000) / 4000.0f * 6.2831853f;
+  for (int k = 14; k >= 0; k--) {
+    float a = ang - k * 0.035f;
+    blendLine(MAP_CX, MAP_CY, MAP_CX + 96 * sinf(a), MAP_CY - 96 * cosf(a), C_TEAL, (uint8_t)(170 - k * 11));
+  }
+  // ตำแหน่งเมือง (จุดเต้น)
+  float pulse = (now % 1600) / 1600.0f;
+  g->drawCircle(MAP_CX, MAP_CY, 4 + (int)(pulse * 12), g->color888(255 * (1 - pulse), 214 * (1 - pulse), 120 * (1 - pulse)));
+  g->fillSmoothCircle(MAP_CX, MAP_CY, 4, C_GOLD);
+  g->fillSmoothCircle(MAP_CX, MAP_CY, 2, C_WHITE);
+  // ทิศเหนือ
+  txt("N", MAP_X + 7, MAP_Y + 24, 11, C_GOLD, top_left);
+  // แถบเวลาของเฟรม (ด้านบน — ด้านล่างเป็นเครดิตแผนที่)
+  g->fillRectAlpha(MAP_X, MAP_Y, MAP_W, 18, 150, 0);
+  for (int i = 0; i < 4; i++) {
+    int cx = MAP_X + 28 + i * 56, cy = MAP_Y + 9;
+    bool on = i == fi;
+    if (on) g->fillSmoothRoundRect(cx - 26, cy - 7, 52, 14, 7, RGB(0, 120, 160));
+    if (i == 3) thai(TH_R_NOW, cx, cy, on ? C_WHITE : C_MUTED, 1);
+    else txt(String("-") + (int)((d->frames[3] - d->frames[i]) / 60) + "m", cx, cy, 9, on ? C_WHITE : C_MUTED, middle_center);
+  }
+  // แผงสถานะด้านขวา
+  const int px = 275;
+  thai(TH_R_STATUS, px, 40, C_MUTED, 1);
+  bool fresh = time(nullptr) < 1700000000 || time(nullptr) - (time_t)d->generated < 45 * 60;
+  if (!fresh) {
+    thai(TH_R_NODATA, px, 90, C_MUTED, 1);
+  } else if (d->rainingHere) {
+    float bl = 0.5f + 0.5f * sinf(now / 300.0f);
+    g->fillSmoothRoundRect(244, 54, 62, 46, 10, g->color888(0, 60 + 60 * bl, 160 + 60 * bl));
+    thai(TH_R_HERE, px, 68, C_WHITE, 1);
+    thai(TH_R_HERE2, px, 88, C_WHITE, 1);
+  } else if (d->approaching && d->etaMin > 0) {
+    float bl = 0.5f + 0.5f * sinf(now / 250.0f);
+    g->fillSmoothRoundRect(244, 52, 62, 22, 8, g->color888(200 + 55 * bl, 90, 40));
+    thai(TH_R_COMING, px, 63, C_WHITE, 1);
+    thai(TH_R_ETA, px, 86, C_MUTED, 1);
+    txt(String(d->etaMin), px, 108, 24, C_GOLD, middle_center);
+    thai(TH_R_MIN, px, 128, C_MUTED, 1);
+    if (d->bearing >= 0) thai((ThaiId)(TH_DIR_0 + ((d->bearing + 22) % 360) / 45), px, 146, C_RAIN, 1);
+  } else if (!isnan(d->nearestKm) && d->nearestKm <= 40) {
+    thai(TH_R_NEAR, px, 64, C_RAIN, 1);
+    txt(String(d->nearestKm, 0), px - 6, 94, 24, C_WHITE, middle_center);
+    thai(TH_R_KM, px + 14 + txtW(String(d->nearestKm, 0), 24) / 2, 98, C_MUTED, 1);
+    if (d->bearing >= 0) thai((ThaiId)(TH_DIR_0 + ((d->bearing + 22) % 360) / 45), px, 124, C_RAIN, 1);
+  } else {
+    thai(TH_R_NONE, px, 70, C_GREEN, 1);
+    thai(TH_R_NONE2, px, 92, C_MUTED, 1);
+  }
+  thai(d->model ? TH_R_MODEL : TH_R_RADAR, px, 162, C_MUTED, 1);
+  endFrame();
+}
+
+// ---------------- หน้า 4: อากาศตอนนี้ ----------------
 void arcValue(int x, int y, float frac, uint32_t col) {
   frac = constrain(frac, 0.0f, 1.0f);
   if (frac > 0.01f) g->fillArc(x + 26, y + 24, 16, 19, 135, 135 + 270 * frac, col);
@@ -664,6 +873,7 @@ void render() {
   screen = SCR_WEATHER;
   if (page == PAGE_HOME) drawHome();
   else if (page == PAGE_SUM) drawSummary();
+  else if (page == PAGE_RADAR) drawRadar();
   else if (page == PAGE_NOW) drawNow();
   else drawForecast();
 }
@@ -884,6 +1094,79 @@ bool tapAt(int& x, int& y) {
   return false;
 }
 
+
+// ---------- โหมดภาพ (แก้จอซีด/ไม่สว่าง) ----------
+bool waitTap(unsigned long ms) {
+  unsigned long t0 = millis();
+  int x, y;
+  while (rawTouch(x, y)) { if (idleHook) idleHook(); delay(10); if (millis() - t0 > ms) return false; }  // รอปล่อยนิ้วก่อน
+  while (millis() - t0 < ms) {
+    if (rawTouch(x, y)) {
+      unsigned long td = millis();
+      while (rawTouch(x, y) && millis() - td < 3000) delay(10);
+      if (millis() - td > 30) return true;
+    }
+    if (idleHook) idleHook();
+    delay(10);
+  }
+  return false;
+}
+
+// ส่งชุดคำสั่งเริ่มจอใหม่ตรง ๆ (ไม่ init บัส/ไฟจอซ้ำ) แล้วตั้งสี/ทิศ/กลับสีเหมือนเดิม
+void applyPreset(uint8_t p) {
+  panelPreset = p % PRESET_COUNT;
+  const uint8_t* l = PRESETS[panelPreset];
+  gfx->startWrite();
+  for (;;) {
+    uint8_t cmd = *l++, n = *l++;
+    if (cmd == 0xFF && n == 0xFF) break;
+    bool wait = n & CMD_DELAY;
+    n &= ~CMD_DELAY;
+    gfx->writeCommand(cmd);
+    for (int i = 0; i < n; i++) gfx->writeData(*l++);
+    if (wait) {
+      uint16_t ms = *l++;
+      gfx->endWrite();
+      delay(ms == 255 ? 500 : ms);
+      gfx->startWrite();
+    }
+  }
+  gfx->endWrite();
+  gfx->setColorDepth(16);     // COLMOD + MADCTL (ทิศจอ)
+  gfx->invertDisplay(false);  // INVON ตามค่าตั้งของจอ
+  gfx->setBrightness(BRIGHTNESS_DAY);
+  brightNow = BRIGHTNESS_DAY;
+}
+
+void drawPresetTest(uint8_t p, int secs) {
+  beginFrame(BG_PLAIN);
+  thai(TH_PRESET_NAME, 14, 18, C_GOLD);
+  txt(String(p + 1) + "/" + PRESET_COUNT, 14 + thaiW(TH_PRESET_NAME) + 8, 18, 18, C_WHITE, middle_left);
+  txt(String(secs), 306, 18, 18, C_MUTED, middle_right);
+  // แถบสีทดสอบ
+  static const uint32_t bars[] = {0xFFFFFF, 0xFFD678, 0xFF3C3C, 0x3CFF6E, 0x288CFF, 0x00E6FF, 0xB464FF, 0xFF64DC};
+  for (int i = 0; i < 8; i++) g->fillSmoothRoundRect(14 + i * 37, 36, 33, 46, 6, bars[i]);
+  for (int x = 0; x < 292; x++) {
+    uint8_t v = x * 255 / 291;
+    g->drawFastVLine(14 + x, 88, 14, g->color888(v, v, v));
+  }
+  thai(TH_PRESET_Q, 160, 130, C_WHITE, 1);
+  thai(TH_PRESET_TAP, 160, 164, C_TEAL, 1);
+  thai(TH_PRESET_WAIT, 160, 196, C_MUTED, 1);
+  endFrame();
+}
+
+uint8_t presetTries = 0;
+bool presetDone = false;
+
+void savePreset(uint8_t p, bool done) {
+  uiPrefs.begin("s3ui", false);
+  uiPrefs.putUChar("preset", p);
+  uiPrefs.putBool("pdone", done);
+  uiPrefs.putUChar("ptries", presetTries);
+  uiPrefs.end();
+}
+
 }  // namespace (ปิดชั่วคราวเพื่อประกาศฟังก์ชันสาธารณะด้านล่าง)
 namespace {
 
@@ -910,6 +1193,10 @@ const char* modeName(uint8_t mode) {
 void begin(uint8_t mode) {
   detectTouch();
   loadCal();
+  uiPrefs.begin("s3ui", true);
+  panelPreset = uiPrefs.getUChar("preset", 0) % PRESET_COUNT;
+  uiPrefs.end();
+  Serial.printf("[Display] โหมดภาพ %u\n", panelPreset + 1);
   gfx = new LGFX(touchKind, touchSda, touchScl, touchAddr);
   gfx->init();
   static const uint8_t rot[] = {5, 7, 1, 3};
@@ -992,6 +1279,76 @@ void wifiSetupBackToKeyboard() {
 }
 
 void setIdleHook(void (*hook)()) { idleHook = hook; }
+
+bool needsPresetChoice() {
+  if (touchKind == TOUCH_NONE) return false;
+  uiPrefs.begin("s3ui", true);
+  presetDone = uiPrefs.getBool("pdone", false);
+  presetTries = uiPrefs.getUChar("ptries", 0);
+  uiPrefs.end();
+  return !presetDone && presetTries < 3;
+}
+
+// ลองทีละโหมด (แบบใหม่ก่อน แบบเดิมไว้ท้าย) ผู้ใช้แตะจอเมื่อภาพสวยที่สุด
+// ถ้าไม่มีใครแตะเลย จะกลับเป็นโหมดเดิม (ไม่เสี่ยงจอดับ)
+void choosePreset() {
+  if (touchKind == TOUCH_NONE) return;
+  if (!cal.ok) runCalibration();
+  Screen prev = screen;
+  screen = SCR_SETUP;
+  uint8_t old = panelPreset;
+  presetTries++;
+  savePreset(old, false);
+  const uint8_t order[] = {1, 2, 3, 0};
+  for (int round = 0; round < 2; round++) {
+    for (uint8_t p : order) {
+      applyPreset(p);
+      for (int secs = 8; secs > 0; secs--) {
+        drawPresetTest(p, secs);
+        if (waitTap(1000)) {
+          Serial.printf("[Display] ผู้ใช้เลือกโหมดภาพ %u\n", p + 1);
+          savePreset(p, true);
+          screen = prev;
+          if (screen == SCR_WEATHER) render();
+          return;
+        }
+      }
+    }
+  }
+  applyPreset(old);
+  savePreset(old, false);
+  Serial.println("[Display] ไม่มีการแตะ — ใช้โหมดภาพเดิม (แตะจอค้าง 5 วินาทีเพื่อเลือกใหม่)");
+  screen = prev;
+  if (screen == SCR_WEATHER) render();
+}
+
+void setPreset(uint8_t p) {
+  applyPreset(p);
+  savePreset(panelPreset, true);
+  if (screen == SCR_WEATHER) render();
+}
+uint8_t preset() { return panelPreset; }
+
+bool waitTap(unsigned long ms) { return ::waitTap(ms); }
+bool hasTouch() { return touchKind != TOUCH_NONE; }
+
+void showSoundTest(int set, int total) {
+  screen = SCR_SETUP;
+  beginFrame(BG_PLAIN);
+  thai(TH_SND_TITLE, 160, 60, C_GOLD, 1);
+  thai(TH_SND_TAP, 160, 104, C_WHITE, 1);
+  thai(TH_SND_SET, 150, 146, C_MUTED, 2);
+  txt(String(set) + "/" + total, 158, 146, 18, C_TEAL, middle_left);
+  thai(TH_SND_SKIP, 160, 190, C_MUTED, 1);
+  endFrame();
+}
+void showSoundOk() {
+  screen = SCR_MESSAGE;
+  beginFrame(BG_PLAIN);
+  thai(TH_SND_OK, 160, 110, C_GREEN, 1);
+  endFrame();
+}
+
 
 bool wifiSetupBusy() { return setupActive && millis() - lastSetupTouch < 120000UL; }
 
@@ -1082,7 +1439,7 @@ void showDisplayMode(uint8_t mode) {
 Touch loop() {
   // หน้านาฬิกาอัปเดต 5 ครั้ง/วินาที (แถบวินาทีลื่น) หน้าอื่นทุก 1 วินาที
   unsigned long now = millis();
-  unsigned long interval = page == PAGE_HOME ? 200 : 1000;
+  unsigned long interval = page == PAGE_HOME ? 200 : page == PAGE_RADAR ? 90 : 1000;
   if (screen == SCR_WEATHER && now - lastFrame >= interval) {
     lastFrame = now;
     render();

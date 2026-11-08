@@ -101,6 +101,18 @@ def bg_summary():
     return im
 
 
+def bg_radar():
+    im = header(aurora_base(), 'แผนที่ฝน')
+    im = gcard(im, (238, 28, 312, 232), r=10)
+    for i, (c, t) in enumerate([((60, 200, 90), 'เบา'), ((240, 220, 60), 'ปานกลาง'), ((240, 90, 60), 'หนัก'), ((220, 40, 180), 'หนักมาก')]):
+        y = 176 + i * 13
+        l = layer(im)
+        ImageDraw.Draw(l).rounded_rectangle([246 * K, (y - 3) * K, 256 * K, (y + 4) * K], K, fill=c + (255,))
+        im = Image.alpha_composite(im, l)
+        im = text(im, (260, y), t, 8, MUT, 'lm', b=False)
+    return im
+
+
 def bg_now():
     im = header(aurora_base(), 'อากาศตอนนี้')
     labels = ['ความชื้น', 'ลม กม./ชม.', 'ฝุ่น PM2.5', 'ดัชนี UV']
@@ -355,6 +367,20 @@ TEXTS += [
     ('ADV_UMB', 'พกร่ม', 10, True), ('ADV_SUN', 'ทากันแดด', 10, True), ('ADV_MASK', 'ใส่หน้ากาก', 10, True),
     ('ADV_WATER', 'ดื่มน้ำบ่อย ๆ', 10, True), ('ADV_GOOD', 'อากาศดี ออกไปข้างนอกได้', 10, True),
     ('S_KMH', 'กม./ชม.', 9, False),
+    ('R_MODEL', '(แบบจำลอง)', 9, False), ('R_RADAR', '(เรดาร์)', 9, False),
+    ('R_STATUS', 'สถานะ', 9, False), ('R_HERE', 'ฝนตก', 13, True), ('R_HERE2', 'บริเวณนี้', 13, True),
+    ('R_COMING', 'ฝนกำลังมา', 12, True), ('R_NEAR', 'มีฝนห่าง', 11, True), ('R_NONE', 'ไม่มีฝน', 13, True),
+    ('R_NONE2', 'ในรัศมี 40 กม.', 9, False), ('R_KM', 'กม.', 9, False), ('R_MIN', 'นาที', 9, False),
+    ('R_NOW', 'ตอนนี้', 8, False), ('R_OUTSIDE', 'แผนที่ฝนครอบคลุมเฉพาะกรุงเทพฯ และปริมณฑล', 9, False), ('R_ETA', 'ถึงในประมาณ', 9, False), ('R_NODATA', 'กำลังโหลดแผนที่...', 12, False),
+    ('DIR_0', 'ทิศเหนือ', 9, False), ('DIR_1', 'ทิศ ตอ.เฉียงเหนือ', 9, False), ('DIR_2', 'ทิศตะวันออก', 9, False),
+    ('DIR_3', 'ทิศ ตอ.เฉียงใต้', 9, False), ('DIR_4', 'ทิศใต้', 9, False), ('DIR_5', 'ทิศ ตต.เฉียงใต้', 9, False),
+    ('DIR_6', 'ทิศตะวันตก', 9, False), ('DIR_7', 'ทิศ ตต.เฉียงเหนือ', 9, False),
+    ('T_RADAR_A', 'กลุ่มฝนห่าง', 10, True), ('T_RADAR_B', 'กม. ถึงในประมาณ', 10, True), ('T_RADAR_C', 'นาที', 10, True),
+    ('PRESET_Q', 'ภาพสว่างและชัดขึ้นไหม?', 16, True), ('PRESET_TAP', 'แตะจอ 1 ครั้ง = ใช้แบบนี้ต่อ', 12, False),
+    ('PRESET_WAIT', 'ถ้าจอผิดปกติ ไม่ต้องทำอะไร ระบบจะกลับเป็นแบบเดิมเอง', 10, False), ('PRESET_NAME', 'โหมดภาพ', 16, True),
+    ('SND_TITLE', 'ทดสอบลำโพง (ครั้งเดียว)', 16, True), ('SND_TAP', 'แตะจอทันทีที่ได้ยินเสียง', 12, True),
+    ('SND_SET', 'ชุดที่', 12, False), ('SND_SKIP', 'ถ้าไม่ได้ยินเลย ระบบจะข้ามเอง', 10, False),
+    ('SND_OK', 'ตั้งค่าเสียงเรียบร้อย', 16, True),
     ('FW_WAIT', 'ห้ามถอดสาย บอร์ดจะรีสตาร์ทเอง', 12, False),
 ]
 
@@ -386,7 +412,8 @@ def main():
              'struct ThaiAsset { uint16_t w, h; const uint8_t* data; };', '']
     total = 0
     # backgrounds
-    for name, fn in [('BG_HOME', bg_home), ('BG_SUM', bg_summary), ('BG_NOW', bg_now), ('BG_FC', bg_fc), ('BG_PLAIN', bg_plain)]:
+    for name, fn in [('BG_HOME', bg_home), ('BG_SUM', bg_summary), ('BG_RADAR', bg_radar), ('BG_NOW', bg_now),
+                     ('BG_FC', bg_fc), ('BG_PLAIN', bg_plain)]:
         j = to_jpeg(fn(), name.lower())
         total += len(j)
         parts.append(carray(name + '_JPG', j))

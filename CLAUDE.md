@@ -40,3 +40,11 @@ reply in Thai and keep user-facing strings (Serial, web UI) in Thai.
   `-b esp32:esp32:esp32s3:CDCOnBoot=cdc,PSRAM=opi,FlashSize=4M,PartitionScheme=no_fs` (2 MB app x2 for OTA).
 - Release: docs/s3w/ with versioned file names (avoid browser cache), manifest.json and version.json.
   Boards poll version.json every 6 h and self-update (autoupdate.cpp). Bump APP_VERSION and version.json together.
+- Display "presets" (1.3.0+): 4 panel init lists in display.cpp (0 old minimal, 1 ILI9341V IPS vendor, 2 ILI9341
+  full gamma, 3 ST7789). Stored in Preferences "s3ui" (preset/pdone/ptries). First boot runs a tap-to-choose loop;
+  long-press 5 s or serial `preset` re-runs it. Rotation is only changed via serial `display`.
+- Radar page: radar.cpp downloads radar.json + f0..f3.jpg (224x204) from the market-data branch in a FreeRTOS task
+  (double-buffered). Map is centred on Bangkok (server/radar.py); page shows a coverage note for cities > 25 km away.
+- Sound: sound.cpp, ES8311 codec at I2C 0x18 on the touch bus (lgfx i2c port 1), I2S MCLK4 BCLK5 WS7, DOUT 6 or 8,
+  PA enable GPIO1 (level tested). One-time tap test picks the config (Preferences "s3snd"). Chimes are synthesized
+  original tones only — never bundle copyrighted music.

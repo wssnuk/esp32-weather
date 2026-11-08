@@ -2,7 +2,7 @@
 #pragma once
 
 #define APP_NAME            "ESP32 Weather S3"
-#define APP_VERSION         "1.2.0"
+#define APP_VERSION         "1.3.0"
 #define DEVICE_HOSTNAME     "esp32-weather-s3"        // เข้าเว็บได้ที่ http://esp32-weather.local
 
 // เมืองเริ่มต้น (เปลี่ยนได้ภายหลังจากหน้าเว็บ หรือพิมพ์ใน Serial Monitor)
@@ -25,6 +25,13 @@
 // ข้อมูลตลาด (ทอง/หุ้น) — ไฟล์ที่ GitHub Actions อัปเดตให้
 #define MARKET_DATA_URL     "https://raw.githubusercontent.com/wssnuk/esp32-weather/market-data/market.json"
 #define MARKET_UPDATE_MS    (5UL * 60UL * 1000UL)
+// แผนที่ฝน (GitHub Actions สร้างทุก 10 นาที)
+#define RADAR_DATA_URL      "https://raw.githubusercontent.com/wssnuk/esp32-weather/market-data/radar/"
+#define RADAR_UPDATE_MS     (10UL * 60UL * 1000UL)
+// เสียง
+#define SOUND_VOLUME        0xBF                     // 0xBF = ดังปกติ, ลดลง = เบาลง
+#define CHIME_FROM_HOUR     7                        // เสียงบอกเวลาทุกชั่วโมง 07:00-21:00
+#define CHIME_TO_HOUR       21
 // อัปเดตเฟิร์มแวร์อัตโนมัติ
 #define AUTO_UPDATE_URL     "https://wssnuk.github.io/esp32-weather/s3w/version.json"
 #define AUTO_UPDATE_EVERY_MS (6UL * 60UL * 60UL * 1000UL)   // ทุก 6 ชั่วโมง
@@ -33,4 +40,5 @@
 // ขา GPIO
 // บอร์ด ESP32-2432S028 (Cheap Yellow Display) — ขาจอ/ทัช/LED อยู่ใน display.cpp
 #define PIN_BUTTON          0        // ปุ่ม BOOT — กดค้าง 3 วินาทีเพื่อล้างการตั้งค่า Wi-Fi
-#define DEFAULT_DISPLAY_MODE 0       // S3: โหมดจอ = ทิศการหมุนจอ (0-3) แตะค้าง 5 วินาทีเพื่อเปลี่ยน
+#define DEFAULT_DISPLAY_MODE 0       // S3: ทิศการหมุนจอ (0-3) เปลี่ยนด้วยคำสั่ง display ใน Serial
+                                     // แตะจอค้าง 5 วินาที = เลือกโหมดภาพ (ความสว่าง/สีของจอ)
