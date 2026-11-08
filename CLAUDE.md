@@ -42,6 +42,7 @@ reply in Thai and keep user-facing strings (Serial, web UI) in Thai.
   Boards poll version.json every 6 h and self-update (autoupdate.cpp). Bump APP_VERSION and version.json together.
 - Display "presets" (1.3.0+): 4 panel init lists in display.cpp (0 old minimal, 1 ILI9341V IPS vendor, 2 ILI9341
   full gamma, 3 ST7789). Stored in Preferences "s3ui" (preset/pdone/ptries). First boot runs a tap-to-choose loop;
+  ILI9341 B6 (display function) 2nd byte must stay 0x82: 0xA2 mirrors, 0xC2 flips upside down.
   long-press 5 s or serial `preset` re-runs it (then a 2nd step picks the "vivid" level).
 - Vivid (1.3.1+): 64K-entry RGB565 LUT in PSRAM (saturation + gamma) applied to the canvas in endFrame (saturation, contrast, gamma>1 = deeper image; user asked for "เข้ม");
   levels 0-3, Preferences "s3ui" key "vivid", serial `vivid N`. Default VIVID_DEFAULT=2. Rotation is only changed via serial `display`.
