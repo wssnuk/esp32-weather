@@ -8,7 +8,7 @@
 - ฟอนต์ VLW (ลบขอบเรียบ) สำหรับตัวเลข/อังกฤษ
 - ข้อความไทยที่เปลี่ยนตามข้อมูล (alpha 4 บิต) — จอแสดงสระ/วรรณยุกต์ไทยซ้อนเองไม่ได้ จึงเรนเดอร์ไว้ก่อน
 """
-import io, os, struct, sys
+import io, math, os, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gfx_helpers import *  # noqa
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
@@ -70,20 +70,51 @@ def header(im, title):
 
 
 def bg_home():
+    """หน้านาฬิกาแบบเปิดโล่ง: แสงอุ่นหลังตัวเลข, รางวินาที, เส้นแบ่งจาง ๆ (ไม่มีกรอบ)"""
     im = aurora_base()
     l = layer(im)
-    ImageDraw.Draw(l).rounded_rectangle([14 * K, 90 * K, 306 * K, 93 * K], 2 * K, fill=(255, 255, 255, 35))
+    ImageDraw.Draw(l).ellipse([40 * K, -20 * K, 220 * K, 90 * K], fill=(255, 180, 80, 30))
+    im = Image.alpha_composite(im, l.filter(ImageFilter.GaussianBlur(40 * K)))
+    l = layer(im)
+    ImageDraw.Draw(l).rounded_rectangle([14 * K, 90 * K, 306 * K, 92 * K], K, fill=(255, 255, 255, 30))
     im = Image.alpha_composite(im, l)
-    im = gcard(im, (10, 132, 310, 190))
+    im = fade_hline(im, 10, 310, 149)
     for i, lab in enumerate(['รู้สึก', 'ฝน', 'PM2.5', 'UV']):
-        x = 150 + i * 40
-        im = text(im, (x, 176), lab, 9, MUT, 'mm', b=False)
+        x = 160 + i * 40
+        im = text(im, (x, 188), lab, 9, MUT, 'mm', b=False)
         if i:
-            l = layer(im)
-            ImageDraw.Draw(l).line([((x - 20) * K, 142 * K), ((x - 20) * K, 182 * K)], fill=(255, 255, 255, 40), width=K)
-            im = Image.alpha_composite(im, l)
-    im = glass(im, (10, 198, 310, 226), r=12, fill=(0, 170, 255, 40), line=(0, 200, 255, 140))
-    return im
+            im = fade_vline(im, x - 20, 158, 196)
+    # แถบแจ้งเตือนแบบโปร่ง ไล่สีน้ำเงิน→ม่วง (ไม่มีเส้นขอบ)
+    g = grad(300 * K, 22 * K, (0, 120, 255), (130, 60, 255), horiz=True).convert('RGBA')
+    m = Image.new('L', g.size, 0)
+    ImageDraw.Draw(m).rounded_rectangle([0, 0, g.size[0] - 1, g.size[1] - 1], 11 * K, fill=70)
+    l = layer(im)
+    l.paste(g, (10 * K, 202 * K), m)
+    return Image.alpha_composite(im, l)
+
+
+def fade_hline(im, x0, x1, y, col=(160, 200, 255), amax=80):
+    l = layer(im)
+    d = ImageDraw.Draw(l)
+    for x in range(int(x0 * K), int(x1 * K)):
+        t = (x - x0 * K) / ((x1 - x0) * K)
+        d.line([(x, y * K), (x, y * K + K - 1)], fill=col + (int(amax * math.sin(math.pi * t)),))
+    return Image.alpha_composite(im, l)
+
+
+def fade_vline(im, x, y0, y1, col=(160, 200, 255), amax=90):
+    l = layer(im)
+    d = ImageDraw.Draw(l)
+    for y in range(int(y0 * K), int(y1 * K)):
+        t = (y - y0 * K) / ((y1 - y0) * K)
+        d.line([(x * K, y), (x * K + K - 1, y)], fill=col + (int(amax * math.sin(math.pi * t)),))
+    return Image.alpha_composite(im, l)
+
+
+def bg_page():
+    """พื้นหลังร่วมของหน้าข้อมูล: ออโรร่า + เส้นหัวเรืองแสง (ชื่อหน้า/ข้อมูลวาดบนบอร์ด)"""
+    im = aurora_base()
+    return fade_hline(im, 8, 312, 23, (0, 230, 255), 150)
 
 
 def bg_summary():
@@ -306,11 +337,11 @@ def icon_png(kind, w, h, s):
 VLW_CHARS = [chr(c) for c in range(0x20, 0x7F)] + ['°']
 
 
-def make_vlw(px, path=FBD):
+def make_vlw(px, path=FBD, chars=None):
     f = ImageFont.truetype(path, px)
     asc, desc = f.getmetrics()
     glyphs = []
-    for ch in sorted(VLW_CHARS, key=ord):
+    for ch in sorted(chars or VLW_CHARS, key=ord):
         adv = int(round(f.getlength(ch)))
         bb = f.getbbox(ch, anchor='ls')
         if ch == ' ' or bb[2] <= bb[0]:
@@ -470,8 +501,8 @@ TF_TONE = [0x0E48, 0x0E49, 0x0E4A, 0x0E4B, 0x0E4C]
 TF_BELOW = [0x0E38, 0x0E39, 0x0E3A]
 
 
-def tfont(px):
-    f = ImageFont.truetype(FR, px)
+def tfont(px, bold=False):
+    f = ImageFont.truetype(FBD if bold else FR, px)
     OX, OY, CW, CH = 30, 60, 160, 90
 
     def rend(t):
@@ -488,7 +519,7 @@ def tfont(px):
 
     glyphs = []  # (cp, kind, dx, dy, w, h, adv, data)  kind 0 = ฐาน, 1 = เครื่องหมาย, 2 = วรรณยุกต์ยกสูง
     base_cps = [c for c in range(0x0E01, 0x0E5C) if c not in TF_ABOVE + TF_TONE + TF_BELOW and chr(c).isprintable()]
-    base_cps = [c for c in base_cps if c not in (0x0E33,)] + [ord(c) for c in ' .-,()/0123456789']
+    base_cps = [c for c in base_cps if c not in (0x0E33,)] + list(range(0x20, 0x7F)) + [0xB7, 0xB0]
     for cp in base_cps:
         ch = chr(cp)
         adv = int(round(f.getlength(ch)))
@@ -530,15 +561,14 @@ def main():
              'struct ThaiAsset { uint16_t w, h; const uint8_t* data; };', '']
     total = 0
     # backgrounds
-    for name, fn in [('BG_HOME', bg_home), ('BG_SUM', bg_summary), ('BG_RAIN', bg_rain), ('BG_NOW', bg_now),
-                     ('BG_FC', bg_fc), ('BG_AIR', bg_air), ('BG_MARKET', bg_market), ('BG_SKY', bg_sky),
-                     ('BG_PLAIN', bg_plain)]:
+    for name, fn in [('BG_HOME', bg_home), ('BG_PAGE', bg_page), ('BG_PLAIN', bg_plain)]:
         j = to_jpeg(fn(), name.lower())
         total += len(j)
         parts.append(carray(name + '_JPG', j))
         parts.append(f'static const ImgAsset {name} = {{{name}_JPG, {len(j)}, 320, 240}};')
     # glyph sets
     sets = [('CLOCK', '0123456789:', 74, (255, 246, 210), (255, 160, 50), (255, 150, 60)),
+            ('BIG', '0123456789°-', 52, (255, 248, 225), (255, 200, 110), (255, 160, 60)),
             ('SEC', '0123456789:', 30, (210, 255, 255), (0, 200, 255), (0, 180, 255))]
     for name, chars, px, c1, c2, glow in sets:
         gs = glyph_set(chars, px, c1, c2, glow, name=name.lower())
@@ -570,20 +600,32 @@ def main():
         v = make_vlw(px)
         total += len(v)
         parts.append(carray(f'VLW_{px}', v))
+    v = make_vlw(30, chars=' 0123456789.,%°+-$')
+    total += len(v)
+    parts.append(carray('VLW_30', v))
     # thai texts
-    # ฟอนต์ไทยแบบไดนามิก
-    tg = tfont(12)
-    ents = []
-    for i, (cp, kind, dx, dy, w, h, adv, data) in enumerate(tg):
-        if data:
-            parts.append(carray(f'TF_{i}', data))
-            total += len(data)
-        ents.append(f'  {{{cp}, {kind}, {dx}, {dy}, {w}, {h}, {adv}, {f"TF_{i}" if data else "nullptr"}}},')
+    # ฟอนต์ไทยแบบไดนามิก (ข้อความที่เปลี่ยนได้) หลายขนาด เรนเดอร์พอดีพิกเซล ไม่ย่อ/ขยายบนบอร์ด
     parts.append('struct TfGlyph { uint16_t cp; uint8_t kind; int8_t dx, dy; uint8_t w, h, adv; const uint8_t* data; };')
-    parts.append('static const TfGlyph TFONT[] = {\n' + '\n'.join(ents) + '\n};')
-    parts.append(f'constexpr int TFONT_N = {len(tg)};')
+    parts.append('struct TfSet { const TfGlyph* g; int n; };')
+    for name, px, bold in [('TF10', 10, False), ('TF12', 12, False), ('TF13B', 13, True), ('TF17B', 17, True)]:
+        tg = tfont(px, bold)
+        ents = []
+        for i, (cp, kind, dx, dy, w, h, adv, data) in enumerate(tg):
+            if data:
+                parts.append(carray(f'{name}_{i}', data))
+                total += len(data)
+            ents.append(f'  {{{cp}, {kind}, {dx}, {dy}, {w}, {h}, {adv}, {f"{name}_{i}" if data else "nullptr"}}},')
+        parts.append(f'static const TfGlyph {name}_G[] = {{\n' + '\n'.join(ents) + '\n};')
+        parts.append(f'static const TfSet {name} = {{{name}_G, {len(tg)}}};')
+    # ใส่เฉพาะข้อความไทยสำเร็จรูปที่โค้ดใช้จริง (ประหยัดพื้นที่ flash)
+    import glob as _g, re as _re
+    code = ''.join(open(f, encoding='utf-8').read() for f in _g.glob(os.path.join(SKETCH, '*.cpp')) + _g.glob(os.path.join(SKETCH, '*.ino')))
+    used = set(_re.findall(r'TH_([A-Z0-9_]+)', code))
+    ranged = set(_re.findall(r'TH_([A-Z]+(?:_[A-Z]+)*)_0\b', code))
+    texts = [x for x in TEXTS if x[0] in used or _re.sub(r'_\d+$', '', x[0]) in ranged]
+    print(f'thai strings: {len(texts)}/{len(TEXTS)} used')
     entries, enum = [], []
-    for key, t, px, b in TEXTS:
+    for key, t, px, b in texts:
         m = thai_alpha(t, px, b)
         data = pack4(m)
         total += len(data)

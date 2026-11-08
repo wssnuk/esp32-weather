@@ -64,3 +64,8 @@ reply in Thai and keep user-facing strings (Serial, web UI) in Thai.
 - Stability (1.5.1+): all HTTPS goes through Net::Guard (net.h, one TLS session at a time). Radar task must only
   touch `inf` under its mutex. Reset reason + last stage (RTC_NOINIT g_stage/g_radarStage) shown on the boot
   screen after a crash and stored in Preferences "diag"; 3 crashes in a row → safe mode (radar off).
+- UI v2 (1.6.0+): no boxed cards. Shared BG_PAGE (aurora + header line) and BG_HOME; everything else is drawn at
+  runtime (glow(), fadeH/fadeV dividers, smoothArc/ring gauges, gradBar). Text must never be scaled: dynamic Thai
+  uses TF10/TF12/TF13B/TF17B (tf()), numbers use VLW 9/11/14/18/24/30 and BIG/CLOCK/SEC glyphs at native size.
+  gen_assets.py only embeds TH_* strings that the sketch references.
+- Thai lunar calendar: s3/tools/gen_lunar.py (pythaidate) → lunar.h (month starts 2024-12..2040); lunarOf()/isHoly().
