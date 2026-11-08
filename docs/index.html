@@ -64,8 +64,25 @@ td:first-child{white-space:nowrap;font-weight:600}
     <div class="caption">แตะจอเพื่อสลับ 7 หน้า: วันนี้ · อากาศตอนนี้ · ฝุ่น PM2.5 (พยากรณ์ 12 ชม.) · พยากรณ์รายชั่วโมง + 3 วัน · แดดและความร้อน (ลมแดด + UV) · ราคาทองคำ · ตลาดหุ้นไทย</div>
   </div>
 
+  <div class="card install" id="s3w" style="border:2px solid #e8c478">
+    <h2>✨ บอร์ด ESP32-S3 จอดำ 2.8" (ทัช Capacitive): นาฬิกาอากาศ Aurora Gold</h2>
+    <img src="s3w/preview.png" alt="ตัวอย่างหน้าจอ Aurora Gold: นาฬิกามีวินาที อากาศตอนนี้ พยากรณ์ และหน้าตั้งค่า" style="width:100%;border-radius:10px">
+    <p>นาฬิกาดิจิทัลบอกวินาที · อากาศตอนนี้ · กราฟพยากรณ์ 12 ชม. + 4 วัน · แจ้งเตือนฝน/ร้อน/ฝุ่น · <b>อัปเดตตัวเองผ่าน Wi-Fi อัตโนมัติ</b></p>
+    <esp-web-install-button manifest="s3w/manifest.json">
+      <button class="btn" slot="activate" style="background:#b8862e">⚡ ติดตั้งลงบอร์ด S3 (ครั้งแรกครั้งเดียว)</button>
+      <span slot="unsupported" class="note">ต้องใช้ Chrome หรือ Edge บนคอมพิวเตอร์</span>
+      <span slot="not-allowed" class="note">ต้องเปิดผ่าน https://</span>
+    </esp-web-install-button>
+    <ol class="steps">
+      <li>เสียบบอร์ด S3 → กดปุ่มด้านบน → เลือกพอร์ต → ติ๊ก <b>Erase</b> → <b>Install</b> (ถ้าเชื่อมต่อไม่ได้: กด BOOT ค้าง + กด RESET 1 ครั้ง แล้วลองใหม่)</li>
+      <li>เสร็จแล้วกด <b>Connect to Wi-Fi</b> เลือก Wi-Fi บ้าน ใส่รหัส (ถ้าไม่ขึ้น: กด RESET บนบอร์ด แล้วกดปุ่มด้านบนอีกครั้ง)</li>
+      <li>จบ! ครั้งต่อไปบอร์ดจะ<b>อัปเดตตัวเอง</b>เมื่อมีเวอร์ชันใหม่ ไม่ต้องเสียบสายอีก</li>
+    </ol>
+    <p class="muted">แตะจอเพื่อเปลี่ยนหน้า · ถ้าภาพบนจอกลับด้าน ให้แตะจอค้าง 5 วินาที</p>
+  </div>
+
   <div class="card">
-    <h2>ติดตั้ง 3 ขั้นตอน</h2>
+    <h2>บอร์ดจอเหลือง ESP32-2432S028: ติดตั้ง 3 ขั้นตอน</h2>
     <ol class="steps">
       <li>เปิดหน้านี้ใน <b>Google Chrome</b> หรือ <b>Microsoft Edge</b> บน<b>คอมพิวเตอร์</b></li>
       <li>เสียบบอร์ดเข้าคอมด้วยสาย USB ที่ส่งข้อมูลได้</li>
