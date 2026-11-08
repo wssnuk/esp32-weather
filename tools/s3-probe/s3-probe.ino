@@ -3,6 +3,7 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <esp_chip_info.h>
+#include <esp_log.h>
 
 // พิมพ์ทั้ง USB (CDC) และ UART0 — บอร์ดบางรุ่นใช้ชิป USB-Serial แยก
 void say(const char* fmt, ...) {
@@ -80,6 +81,7 @@ void tryWiring(int i) {
   String id04 = readId(0x04), idD3 = readId(0xD3);
   say("\n=== จอแบบที่ %d: %s ===\n  รหัสชิป 0x04: %s | 0xD3: %s -> %s\n", i + 1, W->name, id04.c_str(), idD3.c_str(),
       valid(id04) || valid(idD3) ? "✅ จอตอบกลับ" : "❌ ไม่ตอบ");
+  displaySummary += "  แบบ " + String(i + 1) + ": 0x04=" + id04 + " 0xD3=" + idD3 + "\n";
   if (id04.startsWith("85 85")) say("  ชิปจอ: ST7789\n");
   if (idD3.indexOf("93 41") >= 0) say("  ชิปจอ: ILI9341\n");
   spi->beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE0));
@@ -111,7 +113,12 @@ const char* i2cName(uint8_t a) {
   }
 }
 
+String i2cSummary;
+String chipSummary;
+String displaySummary;
+
 void scanI2C() {
+  i2cSummary = "";
   const int pairs[][2] = {{16, 15}, {15, 16}, {1, 3}, {3, 1}, {8, 9}, {9, 8}, {4, 5}, {5, 4}, {6, 7}, {7, 6},
                           {17, 18}, {18, 17}, {39, 40}, {40, 39}, {47, 48}, {48, 47}, {2, 1}, {1, 2}, {38, 39}};
   say("\n----- ค้นหาอุปกรณ์ I2C (ทัช / เสียง / RTC) -----\n");
@@ -123,26 +130,38 @@ void scanI2C() {
       if (Wire.endTransmission() == 0) { found += String(" 0x") + String(a, HEX) + "(" + i2cName(a) + ")"; }
     }
     Wire.end();
-    if (found.length()) say("  SDA %d / SCL %d :%s\n", p[0], p[1], found.c_str());
+    if (found.length()) {
+      say("  SDA %d / SCL %d :%s\n", p[0], p[1], found.c_str());
+      i2cSummary += "  SDA " + String(p[0]) + " / SCL " + String(p[1]) + " :" + found + "\n";
+    }
     delay(5);
   }
   say("----- ค้นหา I2C เสร็จ -----\n");
 }
 
 void setup() {
+  esp_log_level_set("*", ESP_LOG_NONE);  // ปิด log ภายใน (เช่น error ตอนสแกน I2C) ให้อ่านผลง่าย
   Serial.begin(115200);
   Serial0.begin(115200);
   delay(1500);
   esp_chip_info_t ci; esp_chip_info(&ci);
   say("\n\n########## ตรวจบอร์ด ESP32-S3 (s3-probe) ##########\n");
-  say("ชิป %s rev %d, %d core | Flash %u MB | PSRAM %u KB\n", ESP.getChipModel(), ci.revision, ci.cores,
-      ESP.getFlashChipSize() / (1024 * 1024), ESP.getPsramSize() / 1024);
+  char cs[160];
+  snprintf(cs, sizeof(cs), "ชิป %s rev %d, %d core | Flash %u MB | PSRAM %u KB", ESP.getChipModel(), ci.revision,
+           ci.cores, ESP.getFlashChipSize() / (1024 * 1024), ESP.getPsramSize() / 1024);
+  chipSummary = cs;
+  say("%s\n", cs);
   scanI2C();
   say("\nจะลองต่อจอ %d แบบ แบบละ 7 วินาที — ดูที่จอว่าแบบไหนมีตัวเลขใหญ่ขึ้น\n", N);
 }
 
 void loop() {
+  displaySummary = "";
   for (int i = 0; i < N; i++) { tryWiring(i); delay(7000); }
-  say("\n----- วนรอบใหม่ -----\n");
-  scanI2C();
+  say("\n\n================ สรุปผล (ถ่ายรูปส่วนนี้) ================\n");
+  say("%s\n", chipSummary.c_str());
+  say("I2C ที่พบ:\n%s", i2cSummary.length() ? i2cSummary.c_str() : "  (ไม่พบ)\n");
+  say("จอ:\n%s", displaySummary.c_str());
+  say("=========================================================\n");
+  say("จะวนทดสอบจอใหม่อีกรอบ...\n");
 }

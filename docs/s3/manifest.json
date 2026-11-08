@@ -1,6 +1,6 @@
 {
   "name": "ตรวจบอร์ด ESP32-S3 2.8\"",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "new_install_prompt_erase": false,
   "builds": [
     {
