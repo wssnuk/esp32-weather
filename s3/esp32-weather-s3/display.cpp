@@ -368,7 +368,7 @@ void beginFrame(const ImgAsset& bg) {
   }
 }
 // ---------------- เร่งสี/ความสว่าง (ทำกับทุกพิกเซลก่อนส่งขึ้นจอ) ----------------
-// ระดับ 0 = ปิด, 1 = เล็กน้อย, 2 = สดใส (ค่าเริ่มต้น), 3 = จัดเต็ม
+// ระดับ 0 = ปิด, 1 = เล็กน้อย, 2 = เข้ม-สด (ค่าเริ่มต้น), 3 = เข้มจัด
 uint8_t vividLevel = VIVID_DEFAULT;
 uint16_t* vividLut = nullptr;  // ตารางแปลงสี 65536 ค่า (อยู่ใน PSRAM)
 
@@ -376,8 +376,9 @@ void buildVivid() {
   if (vividLevel == 0) return;
   if (!vividLut) vividLut = (uint16_t*)ps_malloc(65536 * sizeof(uint16_t));
   if (!vividLut) return;
-  static const float SAT[] = {1.0f, 1.2f, 1.4f, 1.55f}, GAM[] = {1.0f, 0.82f, 0.7f, 0.6f}, LIFT[] = {0, 0, 0.02f, 0.035f};
-  float sat = SAT[vividLevel], gam = GAM[vividLevel], lift = LIFT[vividLevel];
+  // สีสดขึ้น + คอนทราสต์มากขึ้น + พื้นมืดดำลึกขึ้น (ภาพ "เข้ม" ไม่ซีด)
+  static const float SAT[] = {1.0f, 1.3f, 1.5f, 1.7f}, CON[] = {1.0f, 1.15f, 1.25f, 1.35f}, GAM[] = {1.0f, 1.1f, 1.2f, 1.3f};
+  float sat = SAT[vividLevel], con = CON[vividLevel], gam = GAM[vividLevel];
   // ทำตารางต่อช่องสีก่อน (เร็วกว่า powf ทุกค่า)
   for (uint32_t v = 0; v < 65536; v++) {
     uint16_t c = (uint16_t)((v & 0xFF) << 8 | v >> 8);  // sprite เก็บแบบสลับไบต์
@@ -385,8 +386,8 @@ void buildVivid() {
     float L = 0.299f * r + 0.587f * g6 + 0.114f * b;
     float ch[3] = {L + (r - L) * sat, L + (g6 - L) * sat, L + (b - L) * sat};
     for (auto& x : ch) {
-      x = constrain(x, 0.0f, 1.0f);
-      x = lift + (1 - lift) * powf(x, gam);
+      x = constrain(0.5f + (constrain(x, 0.0f, 1.0f) - 0.5f) * con, 0.0f, 1.0f);
+      x = powf(x, gam);
     }
     uint16_t o = ((uint16_t)(ch[0] * 31 + 0.5f) << 11) | ((uint16_t)(ch[1] * 63 + 0.5f) << 5) | (uint16_t)(ch[2] * 31 + 0.5f);
     vividLut[v] = (uint16_t)((o & 0xFF) << 8 | o >> 8);
