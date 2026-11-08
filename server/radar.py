@@ -4,6 +4,7 @@
 - ถ้าบริเวณนั้นไม่มีเรดาร์ครอบคลุม ใช้แผนที่ฝนจากแบบจำลอง Open-Meteo แทน
 - วิเคราะห์ระยะ/ทิศของกลุ่มฝนที่ใกล้ที่สุด ความเร็ว และเวลาที่น่าจะถึง
 ผลลัพธ์: out/radar/f0..f3.jpg (224x204) + out/radar/radar.json
+แผนที่พื้นหลัง: Esri World Dark Gray Base (เก็บแคชไว้ใน radar/base.png ของ branch market-data)
 """
 import io, json, math, os, sys, time, urllib.request
 from PIL import Image, ImageDraw, ImageFilter
@@ -58,14 +59,22 @@ def crop_scaled(big, cx, cy, z):
     return big.crop(box).resize((W, H), Image.LANCZOS)
 
 
-def basemap():
-    z = 9
-    img, cx, cy = mosaic('https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', z, 'RGB')
+def basemap(cache_path):
+    """แผนที่พื้นหลังโทนเข้ม (Esri Dark Gray) — สร้างครั้งเดียวแล้วเก็บไว้ใช้ซ้ำ"""
+    if cache_path and os.path.exists(cache_path):
+        img = Image.open(cache_path).convert('RGB')
+        if img.size == (W, H):
+            return img
+    z = 10
+    img, cx, cy = mosaic('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', z, 'RGB')
     m = crop_scaled(img, cx, cy, z)
-    # ปรับให้เข้ากับธีม: น้ำเงินเข้ม สว่างขึ้นเล็กน้อย
-    m = Image.eval(m, lambda v: min(255, int(v * 1.25 + 6)))
+    # โทนน้ำเงินเข้มให้เข้ากับธีมบนบอร์ด และสว่างขึ้นเล็กน้อย
     r, g, b = m.split()
-    return Image.merge('RGB', (r, g, Image.eval(b, lambda v: min(255, v + 14))))
+    m = Image.merge('RGB', (Image.eval(r, lambda v: int(v * 0.9)), Image.eval(g, lambda v: int(v * 1.0 + 4)),
+                            Image.eval(b, lambda v: min(255, int(v * 1.25 + 22)))))
+    if cache_path:
+        m.save(cache_path)
+    return m
 
 
 def rainviewer_frames():
@@ -95,8 +104,8 @@ def rainviewer_frames():
 
 def model_frames():
     """แผนที่ฝนจากแบบจำลอง Open-Meteo (ตาราง 9x9 จุด) — ใช้เมื่อไม่มีเรดาร์"""
-    n = 9
-    span_km = 60
+    n = 15
+    span_km = 70
     lats, lons = [], []
     for j in range(n):
         for i in range(n):
@@ -177,7 +186,7 @@ def analyze(frames):
 
 
 def main():
-    base = basemap()
+    base = basemap(os.environ.get('RADAR_BASEMAP_CACHE'))
     source = 'rainviewer'
     try:
         frames, covered = rainviewer_frames()
@@ -192,7 +201,7 @@ def main():
         ov = ov.filter(ImageFilter.GaussianBlur(0.8))
         img.alpha_composite(ov)
         d = ImageDraw.Draw(img)
-        d.text((4, H - 11), '© OpenStreetMap © CARTO' + (' · RainViewer' if source == 'rainviewer' else ' · Open-Meteo'),
+        d.text((4, H - 11), 'Esri' + (' · RainViewer' if source == 'rainviewer' else ' · Open-Meteo model'),
                fill=(150, 160, 180, 200))
         img.convert('RGB').save(os.path.join(OUT, f'f{i}.jpg'), quality=82)
     info = analyze(frames)
