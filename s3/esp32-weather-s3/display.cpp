@@ -908,8 +908,19 @@ void drawRadar() {
   if (!canvas || !r.ready) {
     beginFrame(BG_PLAIN);
     headerClock();
-    thai(r.covered ? TH_R_NODATA : TH_R_NOCOV, 160, 120, C_MUTED, 1);
-    if (r.error.length()) txt(r.error, 160, 150, 9, C_MUTED, middle_center);
+    if (!Radar::started()) {
+      tf(TF13B, "เรดาร์ปิดไว้ชั่วคราว", 160, 104, C_GOLD, 1);
+      tf(TF10, "บอร์ดเพิ่งรีสตาร์ทผิดปกติ จึงเข้าโหมดปลอดภัย", 160, 128, C_MUTED, 1);
+      tf(TF10, "เรดาร์จะเปิดเองเมื่อทำงานปกติครบ 10 นาที", 160, 146, C_MUTED, 1);
+    } else if (!r.covered) {
+      thai(TH_R_NOCOV, 160, 120, C_MUTED, 1);
+    } else {
+      thai(TH_R_NODATA, 160, 104, C_MUTED, 1);
+      String st = r.phase == 1 ? String("กำลังโหลดแผนที่พื้นที่ของคุณ") : r.phase == 2 ? "กำลังโหลดภาพเรดาร์ " + String(r.progress) + "/" + RADAR_FRAMES
+                                                                     : String("กำลังเชื่อมต่อเซิร์ฟเวอร์เรดาร์");
+      tf(TF12, st, 160, 136, C_TEAL, 1);
+      if (r.error.length()) txt(r.error, 160, 158, 9, C_MUTED, middle_center);
+    }
     endFrame();
     return;
   }

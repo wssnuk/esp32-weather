@@ -23,11 +23,14 @@ struct RadarInfo {
   float speedKmh = NAN;
   int etaMin = -1;             // คาดว่าจะถึงในกี่นาที
   uint32_t updatedAt = 0;      // epoch ที่ตรวจล่าสุด
+  uint8_t phase = 0;           // 0 พัก, 1 โหลดแผนที่, 2 โหลดภาพเรดาร์
+  uint8_t progress = 0;        // กำลังโหลดภาพที่เท่าไหร่
   String error;
 };
 
 namespace Radar {
 void begin();
+bool started();                             // เริ่ม task แล้วหรือยัง (โหมดปลอดภัยจะยังไม่เริ่ม)
 void setLocation(double lat, double lon);   // เปลี่ยนตำแหน่ง → โหลดแผนที่ใหม่
 RadarInfo info();                           // สำเนาข้อมูลล่าสุด
 bool drawFrame(int i, lgfx::LovyanGFX* dst); // วาดเฟรม i (0 = เก่าสุด) เต็มจอ

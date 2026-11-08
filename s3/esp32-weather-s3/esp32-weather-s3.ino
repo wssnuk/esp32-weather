@@ -501,6 +501,13 @@ void setup() {
 void loop() {
   g_stage = ST_LOOP;
   if (crashStreak && millis() > 600000UL) crashStreak = 0;  // ทำงานได้ 10 นาที = ปกติแล้ว
+  if (safeMode && millis() > 600000UL && WiFi.status() == WL_CONNECTED) {  // ออกจากโหมดปลอดภัย: เปิดเรดาร์/หาตำแหน่ง
+    safeMode = false;
+    Serial.println(F("[Safe] ทำงานปกติครบ 10 นาที — เปิดเรดาร์และหาตำแหน่ง"));
+    autoLocation(false);
+    Radar::setLocation(settings.lat, settings.lon);
+    Radar::begin();
+  }
   Web::loop();
   handleSerial();
   handleButton();

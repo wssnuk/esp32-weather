@@ -244,6 +244,13 @@ bool buildFrame(const String& host, const String& path, Frame& f) {
   return true;
 }
 
+void setPhase(uint8_t ph, uint8_t prog) {
+  xSemaphoreTake(mtx, portMAX_DELAY);
+  inf.phase = ph;
+  inf.progress = prog;
+  xSemaphoreGive(mtx);
+}
+
 void analyze() {
   // ใช้ระยะกลุ่มฝนที่ใกล้สุดของ 3 เฟรมล่าสุดหาความเร็วที่เข้าหา
   inf.approaching = false;
@@ -288,6 +295,7 @@ void update() {
     xSemaphoreTake(mtx, portMAX_DELAY);
     inf.kmPerPx = kmpp;
     xSemaphoreGive(mtx);
+    setPhase(1, 0);
     loadBase();
     bool cov = checkCoverage(host);
     xSemaphoreTake(mtx, portMAX_DELAY);
@@ -304,6 +312,7 @@ void update() {
     bool have = false;
     for (auto& f : frames) if (f.ts == ts && f.img) have = true;
     if (have || path.isEmpty()) continue;
+    setPhase(2, k - max(0, n - RADAR_FRAMES) + 1);
     Frame nf;
     nf.ts = ts;
     if (!buildFrame(host, path, nf)) return;
@@ -323,6 +332,7 @@ void update() {
   }
   xSemaphoreTake(mtx, portMAX_DELAY);
   inf.updatedAt = time(nullptr);
+  inf.phase = 0;
   xSemaphoreGive(mtx);
   RadarInfo i = Radar::info();
   Serial.printf("[Radar] %d เฟรม | ตรงนี้ %.1f มม./ชม. | ฝนใกล้สุด %.1f กม. ทิศ %d° | %s\n", i.frames, i.hereMmh, i.nearestKm,
@@ -342,10 +352,12 @@ void task(void*) {
 
 namespace Radar {
 
+bool isStarted = false;
+bool started() { return isStarted; }
+
 void begin() {
-  static bool started = false;
-  if (started) return;
-  started = true;
+  if (isStarted) return;
+  isStarted = true;
   mtx = xSemaphoreCreateMutex();
   xTaskCreatePinnedToCore(task, "radar", 20480, nullptr, 1, nullptr, 0);
 }
