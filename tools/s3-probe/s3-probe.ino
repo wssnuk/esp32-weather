@@ -26,6 +26,10 @@ const Wiring WIRINGS[] = {
 };
 const int N = sizeof(WIRINGS) / sizeof(WIRINGS[0]);
 SPIClass* spi = nullptr;
+String i2cSummary;
+String chipSummary;
+String displaySummary;
+bool invertNext = false;
 const Wiring* W = nullptr;
 
 void cmd(uint8_t c) { digitalWrite(W->dc, LOW); digitalWrite(W->cs, LOW); spi->transfer(c); digitalWrite(W->cs, HIGH); }
@@ -88,7 +92,7 @@ void tryWiring(int i) {
   cd(0xCF, {0x00, 0xC1, 0x30}); cd(0xC0, {0x23}); cd(0xC1, {0x10}); cd(0xC5, {0x3E, 0x28});
   cmd(0x11); spi->endTransaction(); delay(120);
   spi->beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE0));
-  cd(0x3A, {0x55}); cd(0x36, {0x08}); cmd(0x20); cmd(0x13); cmd(0x29);
+  cd(0x3A, {0x55}); cd(0x36, {0x08}); cmd(invertNext ? 0x21 : 0x20); cmd(0x13); cmd(0x29);
   fill(0, 0, 240, 320, 0x0000);
   digit(i + 1);
   fill(0, 190, 80, 30, 0xF800); fill(80, 190, 80, 30, 0x07E0); fill(160, 190, 80, 30, 0x001F);
@@ -112,10 +116,6 @@ const char* i2cName(uint8_t a) {
     default: return "?";
   }
 }
-
-String i2cSummary;
-String chipSummary;
-String displaySummary;
 
 void scanI2C() {
   i2cSummary = "";
@@ -152,16 +152,18 @@ void setup() {
   chipSummary = cs;
   say("%s\n", cs);
   scanI2C();
-  say("\nจะลองต่อจอ %d แบบ แบบละ 7 วินาที — ดูที่จอว่าแบบไหนมีตัวเลขใหญ่ขึ้น\n", N);
 }
 
 void loop() {
+  // พบแล้วว่าจอใช้แบบที่ 1 และต้องกลับสี -> แสดงแบบที่ 1 กลับสี (พื้นควรเป็นสีดำ)
   displaySummary = "";
-  for (int i = 0; i < N; i++) { tryWiring(i); delay(7000); }
+  invertNext = true;
+  tryWiring(0);
+  delay(10000);
   say("\n\n================ สรุปผล (ถ่ายรูปส่วนนี้) ================\n");
   say("%s\n", chipSummary.c_str());
   say("I2C ที่พบ:\n%s", i2cSummary.length() ? i2cSummary.c_str() : "  (ไม่พบ)\n");
   say("จอ:\n%s", displaySummary.c_str());
   say("=========================================================\n");
-  say("จะวนทดสอบจอใหม่อีกรอบ...\n");
+  say("หน้าจอตอนนี้: ควรเป็นพื้นดำ เลข 1 สีขาว แถบ แดง/เขียว/น้ำเงิน และแถบไล่สี 4 แถว\n");
 }
