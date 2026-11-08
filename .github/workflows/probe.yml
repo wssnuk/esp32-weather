@@ -1,0 +1,42 @@
+name: storm probe (dev)
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe storm data sources
+        run: |
+          mkdir -p out && cd out
+          UA="esp32-weather-s3/1.6 (+https://github.com/wssnuk/esp32-weather)"
+          curl -s -A "$UA" https://api.rainviewer.com/public/weather-maps.json > rv.json
+          python3 - <<'PY'
+          import json, urllib.request
+          m = json.load(open('rv.json'))
+          sat = m.get('satellite', {})
+          print('satellite keys', list(sat.keys()), {k: len(v) for k, v in sat.items()})
+          ir = sat.get('infrared', [])
+          if ir:
+              p = ir[-1]['path']
+              for z, x, y in [(5, 24, 14), (6, 49, 29), (4, 12, 7)]:
+                  u = f"{m['host']}{p}/256/{z}/{x}/{y}/0/0_0.png"
+                  try:
+                      r = urllib.request.urlopen(urllib.request.Request(u, headers={'User-Agent': 'x'}), timeout=20)
+                      b = r.read(); print('sat', z, r.status, r.headers.get('Content-Type'), len(b))
+                      open(f'sat_{z}.png', 'wb').write(b)
+                  except Exception as e: print('sat', z, 'ERR', e)
+          # radar at low zoom
+          p = m['radar']['past'][-1]['path']
+          for z, x, y in [(5, 24, 14), (6, 49, 29)]:
+              u = f"{m['host']}{p}/512/{z}/{x}/{y}/2/1_0.png"
+              try:
+                  r = urllib.request.urlopen(urllib.request.Request(u, headers={'User-Agent': 'x'}), timeout=20)
+                  b = r.read(); print('radar', z, r.status, len(b)); open(f'radar_{z}.png', 'wb').write(b)
+              except Exception as e: print('radar', z, 'ERR', e)
+          PY
+          curl -s -A "$UA" "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventlist=TC&alertlevel=green;orange;red" -o gdacs.json; head -c 1500 gdacs.json; echo
+          curl -s -A "$UA" "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/5/14/24" -o imagery.jpg; ls -la
+          git init -q -b probe-out && git add . && git -c user.name=bot -c user.email=actions@github.com commit -q -m probe
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" probe-out
