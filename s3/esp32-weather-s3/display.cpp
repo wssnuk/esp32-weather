@@ -1167,6 +1167,7 @@ void applyPreset(uint8_t p) {
   }
   gfx->endWrite();
   gfx->setColorDepth(16);     // COLMOD + MADCTL (ทิศจอ)
+  gfx->setRotation(gfx->getRotation());  // ย้ำทิศจอ (กันภาพกลับหัวหลังรีเซ็ตจอ)
   gfx->invertDisplay(false);  // INVON ตามค่าตั้งของจอ
   gfx->setBrightness(BRIGHTNESS_DAY);
   brightNow = BRIGHTNESS_DAY;

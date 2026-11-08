@@ -9,6 +9,7 @@
 //  - กดปุ่ม BOOT ค้าง 3 วินาที = ล้างการตั้งค่า Wi-Fi
 // =====================================================================
 #include <WiFi.h>
+#include <Preferences.h>
 #include "app.h"
 #include "config.h"
 #include "display.h"
@@ -308,6 +309,20 @@ void setup() {
   Serial.printf("\n\n🌤️  %s v%s กำลังเริ่มทำงาน...\n", APP_NAME, APP_VERSION);
 
   Store::load(settings);
+  // 1.3.3: เวอร์ชันเก่าใช้ "แตะค้าง" เพื่อหมุนจอ ทำให้บางเครื่องค้างอยู่ในทิศกลับหัว → คืนค่าทิศจอที่ถูกต้องครั้งเดียว
+  {
+    Preferences p;
+    p.begin("s3ui", false);
+    if (!p.getBool("rotfix", false)) {
+      if (settings.displayMode != DEFAULT_DISPLAY_MODE) {
+        Serial.printf("[Display] คืนค่าทิศจอจากโหมด %u เป็นค่าเริ่มต้น\n", settings.displayMode + 1);
+        settings.displayMode = DEFAULT_DISPLAY_MODE;
+        Store::saveDisplayMode(DEFAULT_DISPLAY_MODE);
+      }
+      p.putBool("rotfix", true);
+    }
+    p.end();
+  }
   Display::begin(settings.displayMode);
   Display::setIdleHook([]() { Web::loop(); handleSerial(); });
   Serial.printf("[Display] โหมด %u: %s (พิมพ์ display เพื่อเปลี่ยน)\n", settings.displayMode + 1,
