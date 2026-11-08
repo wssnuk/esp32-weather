@@ -3,6 +3,7 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include "config.h"
+#include "net.h"
 
 namespace {
 float f(JsonVariantConst v) { return v.isNull() ? NAN : v.as<float>(); }
@@ -11,6 +12,7 @@ float f(JsonVariantConst v) { return v.isNull() ? NAN : v.as<float>(); }
 namespace MarketApi {
 
 bool fetch(Market& m) {
+  Net::Guard ng;
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;

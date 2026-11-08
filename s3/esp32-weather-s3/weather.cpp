@@ -2,6 +2,7 @@
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include "net.h"
 
 namespace {
 
@@ -23,6 +24,7 @@ String urlEncode(const String& s) {
 
 // ดาวน์โหลด JSON ผ่าน HTTPS
 bool getJson(const String& url, JsonDocument& doc, String& err) {
+  Net::Guard ng;
   WiFiClientSecure client;
   client.setInsecure();  // ข้อมูลสาธารณะ ไม่มีข้อมูลลับ จึงไม่ตรวจใบรับรองเพื่อความง่าย
   HTTPClient http;

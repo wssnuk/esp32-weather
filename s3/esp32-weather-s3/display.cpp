@@ -1711,6 +1711,15 @@ void showBoot(const char* version) {
   txt(String("v") + version, 160, 132, 11, C_MUTED, middle_center);
   endFrame();
 }
+void showBootReason(const String& info, uint32_t streak, bool safe) {
+  screen = SCR_MESSAGE;
+  beginFrame(BG_PLAIN);
+  txt(APP_NAME, 160, 60, 24, C_GOLD, middle_center);
+  txt(String("v") + APP_VERSION, 160, 88, 11, C_MUTED, middle_center);
+  txt("Last restart: " + info, 160, 130, 11, C_RED, middle_center);
+  txt(String("x") + streak + (safe ? "  (safe mode: radar off)" : ""), 160, 152, 11, C_MUTED, middle_center);
+  endFrame();
+}
 void showConnecting(const String& ssid) { message(TH_CONNECTING, ssid, C_GOLD); }
 void showWifiFailed() { message(TH_WIFI_FAILED, "", C_WHITE); }
 void showLoading() { message(TH_LOADING, "", C_WHITE); }

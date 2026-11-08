@@ -8,6 +8,7 @@
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
 #include "config.h"
+#include "net.h"
 
 namespace {
 
@@ -75,8 +76,17 @@ HTTPClient http;
 uint8_t* dl = nullptr;
 size_t dlCap = 0;
 
+void setError(const String& e) {
+  xSemaphoreTake(mtx, portMAX_DELAY);
+  inf.error = e;
+  xSemaphoreGive(mtx);
+}
+
 int fetch(const String& url, size_t& len) {
   len = 0;
+  if (ESP.getFreeHeap() < 60000) return -4;  // หน่วยความจำภายในเหลือน้อย ข้ามรอบนี้
+  Net::Guard ng;
+  g_radarStage = ST_RADAR_NET;
   http.setReuse(true);
   http.setTimeout(15000);
   http.setUserAgent("esp32-weather-s3/" APP_VERSION);
@@ -99,6 +109,7 @@ int fetch(const String& url, size_t& len) {
     len += s->readBytes(dl + len, n);
   }
   http.end();
+  g_radarStage = ST_RADAR_IDLE;
   return (size < 0 || len == (size_t)size) ? 200 : -3;
 }
 
@@ -113,7 +124,7 @@ bool loadBase() {
   if (!base) base = newSprite();
   if (!labels) labels = newSprite();
   if (!layer) layer = newSprite();
-  if (!base || !labels || !layer) { inf.error = "PSRAM"; return false; }
+  if (!base || !labels || !layer) { setError("PSRAM"); return false; }
   base->fillScreen(base->color888(28, 30, 36));
   labels->fillScreen(0);
   int tx0 = (int)floor(originX / 256), ty0 = (int)floor(originY / 256);
@@ -125,11 +136,14 @@ bool loadBase() {
       size_t len;
       String t = String(Z) + "/" + ty + "/" + tx;
       if (fetch("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/" + t, len) == 200) {
+        g_radarStage = ST_RADAR_PNG;
         if (dl[0] == 0xFF) base->drawJpg(dl, len, dx, dy);
         else base->drawPng(dl, len, dx, dy);
+        g_radarStage = ST_RADAR_IDLE;
+        vTaskDelay(1);
       } else ok = false;
       if (fetch("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/" + t, len) == 200)
-        labels->drawPng(dl, len, dx, dy);
+      { g_radarStage = ST_RADAR_PNG; labels->drawPng(dl, len, dx, dy); g_radarStage = ST_RADAR_IDLE; vTaskDelay(1); }
     }
   // ทำให้แผนที่สว่างขึ้นเล็กน้อย (แผนที่ Esri เข้มมากบนจอเล็ก)
   uint16_t* p = (uint16_t*)base->getBuffer();
@@ -164,13 +178,16 @@ bool buildFrame(const String& host, const String& path, Frame& f) {
     for (int tx = tx0; tx <= tx1; tx++) {
       size_t len;
       int code = fetch(host + path + "/512/7/" + tx + "/" + ty + "/2/1_0.png", len);
-      if (code != 200) { inf.error = "radar HTTP " + String(code); return false; }
+      if (code != 200) { setError("radar HTTP " + String(code)); return false; }
       int dx = tx * 512 - (int)originX, dy = ty * 512 - (int)originY;
       int ox = dx < 0 ? -dx : 0, oy = dy < 0 ? -dy : 0;
+      g_radarStage = ST_RADAR_PNG;
       layer->drawPng(dl, len, max(dx, 0), max(dy, 0), RADAR_W - max(dx, 0), RADAR_H - max(dy, 0), ox, oy);
+      g_radarStage = ST_RADAR_IDLE;
+      vTaskDelay(1);
     }
   LGFX_Sprite* img = newSprite();
-  if (!img) { inf.error = "PSRAM"; return false; }
+  if (!img) { setError("PSRAM"); return false; }
   // วิเคราะห์ + ผสมสีฝนลงบนแผนที่
   const uint16_t* L = (const uint16_t*)layer->getBuffer();
   const uint16_t* B = (const uint16_t*)base->getBuffer();
@@ -182,7 +199,9 @@ bool buildFrame(const String& host, const String& path, Frame& f) {
   int bestX = 0, bestY = 0;
   float here = 0, mx = 0;
   int lastRaw = -1, lastDbz = 0;
-  for (int y = 0; y < RADAR_H; y++)
+  g_radarStage = ST_RADAR_MIX;
+  for (int y = 0; y < RADAR_H; y++) {
+    if ((y & 31) == 0) vTaskDelay(1);  // ปล่อยให้งานอื่นทำงาน (กัน watchdog)
     for (int x = 0; x < RADAR_W; x++) {
       int i = y * RADAR_W + x;
       uint16_t l = L[i], o = B[i];
@@ -209,6 +228,8 @@ bool buildFrame(const String& host, const String& path, Frame& f) {
       if (T[i]) o = T[i];  // ชื่อสถานที่ทับด้านบน
       O[i] = o;
     }
+  }
+  g_radarStage = ST_RADAR_IDLE;
   f.img = img;
   f.hereMmh = here;
   f.maxMmh = mx;
@@ -248,9 +269,9 @@ void analyze() {
 
 void update() {
   size_t len;
-  if (fetch("https://api.rainviewer.com/public/weather-maps.json", len) != 200) { inf.error = "meta"; return; }
+  if (fetch("https://api.rainviewer.com/public/weather-maps.json", len) != 200) { setError("meta"); return; }
   JsonDocument doc;
-  if (deserializeJson(doc, (const char*)dl, len)) { inf.error = "meta json"; return; }
+  if (deserializeJson(doc, (const char*)dl, len)) { setError("meta json"); return; }
   String host = doc["host"] | "https://tilecache.rainviewer.com";
   JsonArrayConst past = doc["radar"]["past"];
   int n = past.size();
@@ -263,7 +284,10 @@ void update() {
     worldXY(curLat, curLon, wx, wy);
     originX = floor(wx) - RADAR_W / 2;
     originY = floor(wy) - RADAR_H / 2;
-    inf.kmPerPx = 40075.0f * cosf(curLat * DEG_TO_RAD) / WORLD;
+    float kmpp = 40075.0f * cosf(curLat * DEG_TO_RAD) / WORLD;
+    xSemaphoreTake(mtx, portMAX_DELAY);
+    inf.kmPerPx = kmpp;
+    xSemaphoreGive(mtx);
     loadBase();
     bool cov = checkCoverage(host);
     xSemaphoreTake(mtx, portMAX_DELAY);
@@ -323,7 +347,7 @@ void begin() {
   if (started) return;
   started = true;
   mtx = xSemaphoreCreateMutex();
-  xTaskCreatePinnedToCore(task, "radar", 16384, nullptr, 1, nullptr, 0);
+  xTaskCreatePinnedToCore(task, "radar", 20480, nullptr, 1, nullptr, 0);
 }
 
 void setLocation(double lat, double lon) {

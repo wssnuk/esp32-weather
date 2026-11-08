@@ -14,6 +14,7 @@ const char* modeName(uint8_t mode);
 
 void begin(uint8_t mode);
 void showBoot(const char* version);
+void showBootReason(const String& info, uint32_t streak, bool safeMode);  // สาเหตุที่รีสตาร์ทครั้งก่อน
 void showConnecting(const String& ssid);
 void showWifiFailed();
 void showWifiFailedReason(int wlStatus);   // บอกสาเหตุที่ต่อ Wi-Fi ไม่ได้ (รหัสผิด / ไม่พบ ฯลฯ)

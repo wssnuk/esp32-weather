@@ -17,6 +17,8 @@
 #include "autoupdate.h"
 #include "radar.h"
 #include "geo.h"
+#include "net.h"
+#include <esp_system.h>
 #include "sound.h"
 #include "web.h"
 
@@ -24,6 +26,7 @@ Settings settings;
 Weather weather;
 AirQuality air;
 Market market;
+String lastResetInfo;  // สาเหตุการรีสตาร์ทครั้งก่อน (ถ้าค้าง)
 static unsigned long nextMarketAt = 0;
 
 static bool portalMode = false;
@@ -149,6 +152,7 @@ static void updateAddress() {
 }
 
 void autoLocation(bool force) {
+  g_stage = ST_GEO;
   if (settings.locManual && !force) {
     if (settings.addrTh.isEmpty()) updateAddress();
     return;
@@ -331,6 +335,8 @@ static void processChar(char c) {
                     (portalMode ? WiFi.softAPIP() : WiFi.localIP()).toString().c_str(), WiFi.RSSI(),
                     ESP.getFreeHeap(), millis() / 1000);
       Serial.printf("โหมดภาพ %u | เสียง: %s\n", Display::preset() + 1, Sound::status().c_str());
+      Serial.printf("RAM ภายในต่ำสุดที่เคยเหลือ %u bytes | PSRAM ว่าง %u KB | รีสตาร์ทครั้งก่อน: %s\n", ESP.getMinFreeHeap(),
+                    ESP.getFreePsram() / 1024, lastResetInfo.length() ? lastResetInfo.c_str() : "ปกติ");
     } else if (lower.startsWith("city ")) {
       if (portalMode) { Serial.println(F("ต้องเชื่อมต่อ Wi-Fi ก่อน")); return; }
       String msg;
@@ -381,9 +387,44 @@ static void radarAlert() {
 }
 
 // ---------------- setup / loop ----------------
+// ---------------- บันทึกสาเหตุการรีสตาร์ท ----------------
+RTC_NOINIT_ATTR static uint32_t crashStreak;  // จำนวนครั้งที่ค้าง/ไฟตกติดกัน (ไม่หายตอนรีสตาร์ท)
+static bool safeMode = false;
+
+static void checkResetReason() {
+  esp_reset_reason_t rr = esp_reset_reason();
+  const char* name = rr == ESP_RST_PANIC ? "PANIC" : rr == ESP_RST_INT_WDT ? "INT_WDT" : rr == ESP_RST_TASK_WDT ? "TASK_WDT"
+                   : rr == ESP_RST_WDT ? "WDT" : rr == ESP_RST_BROWNOUT ? "BROWNOUT" : rr == ESP_RST_POWERON ? "POWERON"
+                   : rr == ESP_RST_SW ? "SW" : rr == ESP_RST_USB ? "USB" : "OTHER";
+  bool crash = rr == ESP_RST_PANIC || rr == ESP_RST_INT_WDT || rr == ESP_RST_TASK_WDT || rr == ESP_RST_WDT || rr == ESP_RST_BROWNOUT;
+  if (rr == ESP_RST_POWERON || crashStreak > 100) crashStreak = 0;
+  if (crash) {
+    crashStreak++;
+    lastResetInfo = String(name) + " @" + stageName(g_stage) + " / " + stageName(g_radarStage);
+    Preferences p;
+    p.begin("diag", false);
+    p.putString("last", lastResetInfo);
+    p.putUInt("count", p.getUInt("count", 0) + 1);
+    p.end();
+    Serial.printf("\n⚠️  รีสตาร์ทครั้งก่อนเพราะ %s (ครั้งที่ %u ติดกัน)\n", lastResetInfo.c_str(), crashStreak);
+    if (rr == ESP_RST_BROWNOUT) Serial.println(F("   ไฟตก: ลองเปลี่ยนสาย USB / ที่ชาร์จ (แนะนำ 5V 1A ขึ้นไป)"));
+  } else {
+    crashStreak = 0;
+    Preferences p;
+    p.begin("diag", true);
+    lastResetInfo = p.getString("last", "");
+    p.end();
+  }
+  safeMode = crashStreak >= 3;  // ค้างซ้ำ 3 ครั้ง → ปิดเรดาร์ชั่วคราวเพื่อให้ใช้งานส่วนอื่นได้
+  if (safeMode) Serial.println(F("[Safe] ค้างซ้ำหลายครั้ง — ปิดเรดาร์ไว้ก่อนในรอบนี้"));
+  g_stage = ST_BOOT;
+  g_radarStage = 0;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(500);
+  checkResetReason();
   pinMode(PIN_BUTTON, INPUT_PULLUP);
   Serial.printf("\n\n🌤️  %s v%s กำลังเริ่มทำงาน...\n", APP_NAME, APP_VERSION);
 
@@ -407,6 +448,10 @@ void setup() {
   Serial.printf("[Display] โหมด %u: %s (พิมพ์ display เพื่อเปลี่ยน)\n", settings.displayMode + 1,
                 Display::modeName(settings.displayMode));
   Display::showBoot(APP_VERSION);
+  if (crashStreak > 0) {  // แสดงสาเหตุบนจอ 6 วินาที (ถ่ายรูปส่งให้ผู้พัฒนาได้)
+    Display::showBootReason(lastResetInfo, crashStreak, safeMode);
+    delay(6000);
+  }
   // ช่วงหน้าจอเริ่มต้น: แตะค้างเพื่อเปลี่ยนโหมดจอได้ แม้ยังไม่ได้ตั้งค่า Wi-Fi
   for (unsigned long t = millis(); millis() - t < 2500;) {
     if (Display::loop() == Display::Touch::LongPress) Display::choosePreset();
@@ -437,18 +482,22 @@ void setup() {
   autoLocation(false);  // หาตำแหน่งจากอินเทอร์เน็ต (ถ้าไม่ได้ตั้งเอง) + ชื่อตำบล/อำเภอ/จังหวัด
   Web::beginDashboard();
   Radar::setLocation(settings.lat, settings.lon);
-  Radar::begin();
+  if (!safeMode) Radar::begin();
   Display::showLoading();
   printHelp();
   requestWeatherRefresh();
 }
 
 void loop() {
+  g_stage = ST_LOOP;
+  if (crashStreak && millis() > 600000UL) crashStreak = 0;  // ทำงานได้ 10 นาที = ปกติแล้ว
   Web::loop();
   handleSerial();
   handleButton();
 
+  g_stage = ST_RENDER;
   Display::Touch touch = Display::loop();
+  g_stage = ST_LOOP;
   if (touch == Display::Touch::LongPress) Display::choosePreset();
   Sound::loop();
 
@@ -488,12 +537,16 @@ void loop() {
   }
 
   if (touch == Display::Touch::Tap) Display::nextPage();
+  g_stage = ST_UPDATE;
   AutoUpdate::loop();
+  g_stage = ST_LOOP;
   radarAlert();
 
   // ข้อมูลตลาด (ทอง/หุ้น) แยกรอบจากข้อมูลอากาศ
   if (weather.fetchedAt != 0 && (long)(millis() - nextMarketAt) >= 0) {
+    g_stage = ST_MARKET;
     bool mok = MarketApi::fetch(market);
+    g_stage = ST_LOOP;
     if (mok) {
       Serial.printf("[Market] SET %.2f (%+.2f%%) | ทองแท่งขาย %.0f บาท | USD %.2f\n", market.setPrice,
                     market.setPct, market.barSell, market.usdthb);
@@ -507,7 +560,9 @@ void loop() {
   if ((long)(millis() - nextWeatherAt) >= 0) {
     Display::showUpdating();
     Display::setRgb(false, true, false);  // เขียว = กำลังดึงข้อมูล
+    g_stage = ST_WEATHER;
     bool ok = WeatherApi::fetch(settings.lat, settings.lon, weather);
+    g_stage = ST_AIR;
     if (ok && !WeatherApi::fetchAir(settings.lat, settings.lon, air))
       Serial.println("[Air] ดึงค่าฝุ่นไม่สำเร็จ: " + air.error);
     Display::setRgb(!ok, false, false);   // แดงค้าง = ดึงข้อมูลไม่สำเร็จ

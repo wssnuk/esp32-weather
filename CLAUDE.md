@@ -61,3 +61,6 @@ reply in Thai and keep user-facing strings (Serial, web UI) in Thai.
 - Sound: sound.cpp, ES8311 codec at I2C 0x18 on the touch bus (lgfx i2c port 1), I2S MCLK4 BCLK5 WS7, DOUT 6 or 8,
   PA enable GPIO1 (level tested). One-time tap test picks the config (Preferences "s3snd"). Chimes are synthesized
   original tones only — never bundle copyrighted music.
+- Stability (1.5.1+): all HTTPS goes through Net::Guard (net.h, one TLS session at a time). Radar task must only
+  touch `inf` under its mutex. Reset reason + last stage (RTC_NOINIT g_stage/g_radarStage) shown on the boot
+  screen after a crash and stored in Preferences "diag"; 3 crashes in a row → safe mode (radar off).

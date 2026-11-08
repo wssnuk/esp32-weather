@@ -4,12 +4,14 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include "config.h"
+#include "net.h"
 
 namespace {
 
 const char* UA = "esp32-weather-s3/" APP_VERSION " (+https://github.com/wssnuk/esp32-weather)";
 
 int request(const String& url, const String* body, String& out) {
+  Net::Guard ng;
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;

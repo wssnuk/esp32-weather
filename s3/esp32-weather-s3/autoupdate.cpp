@@ -4,6 +4,7 @@
 #include <HTTPUpdate.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include "net.h"
 #include "config.h"
 #include "display.h"
 
@@ -22,6 +23,7 @@ namespace AutoUpdate {
 
 bool checkNow(bool verbose) {
   if (WiFi.status() != WL_CONNECTED) return false;
+  Net::Guard ng;
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
@@ -47,6 +49,7 @@ bool checkNow(bool verbose) {
   }
   Serial.printf("[Update] พบเวอร์ชันใหม่ %s (ตอนนี้ %s) กำลังติดตั้ง...\n", latest.c_str(), APP_VERSION);
   Display::showUpdatingFirmware(latest);
+  Net::Guard ng2;
   WiFiClientSecure dl;
   dl.setInsecure();
   httpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
