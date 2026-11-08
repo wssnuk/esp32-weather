@@ -1,0 +1,14 @@
+name: radar probe (dev)
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet pillow && python server/rv_probe.py
+      - name: Esri tile format
+        run: curl -sI "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/10/478/803" | grep -i "content-type\|content-length"
