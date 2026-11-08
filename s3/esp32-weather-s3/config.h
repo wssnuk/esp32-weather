@@ -2,7 +2,7 @@
 #pragma once
 
 #define APP_NAME            "ESP32 Weather S3"
-#define APP_VERSION         "1.1.1"
+#define APP_VERSION         "1.2.0"
 #define DEVICE_HOSTNAME     "esp32-weather-s3"        // เข้าเว็บได้ที่ http://esp32-weather.local
 
 // เมืองเริ่มต้น (เปลี่ยนได้ภายหลังจากหน้าเว็บ หรือพิมพ์ใน Serial Monitor)
@@ -16,7 +16,7 @@
 #define PORTAL_RETRY_MS     180000   // ถ้ามีรหัส Wi-Fi แล้วแต่ต่อไม่ได้ เปิดหน้าตั้งค่า 3 นาทีแล้วลองใหม่
 
 // รอบการอัปเดตข้อมูลอากาศ
-#define WEATHER_UPDATE_MS   (10UL * 60UL * 1000UL)   // ทุก 10 นาที
+#define WEATHER_UPDATE_MS   (5UL * 60UL * 1000UL)    // ทุก 5 นาที (เกือบเรียลไทม์)
 #define RAIN_ALERT_PERCENT  60                       // เตือนเมื่อโอกาสฝนใน 2 ชม. ถึงค่านี้
 #define BRIGHTNESS_DAY      255
 #define BRIGHTNESS_NIGHT    140                      // ความสว่างตอนกลางคืน (0-255)

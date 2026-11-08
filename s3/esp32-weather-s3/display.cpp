@@ -150,9 +150,10 @@ void detectTouch() {
 
 // ---------------- สีและตัวช่วย ----------------
 inline uint32_t RGB(uint8_t r, uint8_t g_, uint8_t b) { return ((uint32_t)r << 16) | ((uint32_t)g_ << 8) | b; }
-const uint32_t C_WHITE = RGB(255, 255, 255), C_GOLD = RGB(250, 214, 140), C_MUTED = RGB(200, 210, 228),
-               C_TEAL = RGB(90, 230, 210), C_RAIN = RGB(120, 190, 255), C_FEEL = RGB(255, 170, 120),
-               C_UV = RGB(255, 140, 210), C_RED = RGB(255, 110, 90);
+const uint32_t C_WHITE = RGB(255, 255, 255), C_GOLD = RGB(255, 214, 120), C_MUTED = RGB(200, 214, 240),
+               C_TEAL = RGB(0, 230, 255), C_RAIN = RGB(90, 170, 255), C_FEEL = RGB(255, 150, 90),
+               C_UV = RGB(255, 100, 220), C_RED = RGB(255, 90, 110), C_VIOLET = RGB(170, 100, 255),
+               C_GREEN = RGB(120, 240, 160);
 
 uint32_t pmColor(float v) {
   int lv = WeatherApi::pm25Level(v);
@@ -297,7 +298,16 @@ void endFrame() {
   else gfx->endWrite();
 }
 
+int page = 0;  // ประกาศล่วงหน้า (ค่าจริงอยู่ด้านล่าง)
+void pageDots(int cx, int y) {
+  for (int i = 0; i < 4; i++) {
+    int x = cx - 15 + i * 10;
+    if (i == page) g->fillSmoothCircle(x, y, 3, C_TEAL);
+    else g->drawCircle(x, y, 2, RGB(140, 150, 180));
+  }
+}
 void headerClock() {
+  pageDots(236, 12);
   struct tm t;
   if (!getLocalTime(&t, 0)) return;
   char b[6];
@@ -309,9 +319,9 @@ void headerClock() {
 const Settings* S = nullptr;
 const Weather* Wx = nullptr;
 const AirQuality* A = nullptr;
-constexpr int PAGE_COUNT = 3;
-enum { PAGE_HOME = 0, PAGE_NOW, PAGE_FC };
-int page = PAGE_HOME;
+constexpr int PAGE_COUNT = 4;
+enum { PAGE_HOME = 0, PAGE_SUM, PAGE_NOW, PAGE_FC };
+
 enum Screen { SCR_NONE, SCR_WEATHER, SCR_MESSAGE, SCR_SETUP } screen = SCR_NONE;
 bool updating = false;
 unsigned long lastFrame = 0, touchStart = 0, wakeUntil = 0;
@@ -335,7 +345,7 @@ void drawTicker() {
   for (int i = 0; i < w.hCount && i < 12; i++)
     if (w.hRain[i] >= 60) { at = i; break; }
   uint32_t dot = C_TEAL;
-  int x = 38, y = 216;
+  int x = 38, y = 212;
   if (updating) {
     thai(TH_T_UPDATING, x, y, C_MUTED);
   } else if (rainingNow) {
@@ -359,7 +369,31 @@ void drawTicker() {
   } else {
     thai(TH_T_NO_RAIN, x, y, RGB(210, 230, 255));
   }
-  g->fillSmoothCircle(26, 216, 4, dot);
+  g->fillSmoothCircle(26, 212, 4, dot);
+}
+
+// จุด LIVE + เวลาที่อัปเดตล่าสุด
+void drawFreshness(int xr, int y) {
+  if (!Wx || !Wx->valid || !Wx->fetchedAt) return;
+  int mins = (millis() - Wx->fetchedAt) / 60000;
+  int x = xr;
+  if (mins < 1) {
+    x -= thaiW(TH_JUST_NOW);
+    thai(TH_JUST_NOW, x, y, C_MUTED);
+  } else {
+    x -= thaiW(TH_MIN_AGO);
+    thai(TH_MIN_AGO, x, y, C_MUTED);
+    String m = String(mins);
+    x -= txtW(m, 9) + 3;
+    txt(m, x, y, 9, C_WHITE, middle_left);
+    x -= thaiW(TH_UPD) + 3;
+    thai(TH_UPD, x, y, C_MUTED);
+  }
+  // จุดกะพริบแบบ LIVE
+  float ph = (millis() % 1500) / 1500.0f;
+  uint8_t a = 80 + (uint8_t)(175 * (0.5f + 0.5f * cosf(ph * 6.283f)));
+  g->fillSmoothCircle(x - 8, y, 4, g->color888(0, a * 230 / 255, a));
+  g->fillSmoothCircle(x - 8, y, 2, C_WHITE);
 }
 
 void drawHome() {
@@ -369,50 +403,155 @@ void drawHome() {
   String city = S ? S->city : String("");
   int comma = city.indexOf(',');
   if (comma > 0) city = city.substring(0, comma);
-  txt(city, 14, 12, 11, C_GOLD, middle_left);
-  drawWifi(290, 16);
+  txt(city, 12, 11, 11, C_GOLD, middle_left);
+  drawWifi(296, 15);
+  drawFreshness(284, 11);
   char hm[6] = "--:--", sec[4] = ":--";
   if (haveTime) {
     snprintf(hm, sizeof(hm), "%02d:%02d", t.tm_hour, t.tm_min);
     snprintf(sec, sizeof(sec), ":%02d", t.tm_sec);
   }
-  int x = drawGlyphs(GOLD_GLYPHS, hm, 18, 26);
-  drawGlyphs(SEC_GLYPHS, sec, x + 2, 26 + GOLD_ASC - SEC_ASC - 2);
-  // แถบวินาที (เลื่อนลื่น ๆ)
+  // นาฬิกาตัวใหญ่ + วินาที (ฐานตัวอักษรตรงกัน)
+  int x = drawGlyphs(CLOCK_GLYPHS, hm, 10, 4);
+  drawGlyphs(SEC_GLYPHS, sec, x + 2, 4 + CLOCK_ASC - SEC_ASC);
   if (haveTime) {
     struct timeval tv;
     gettimeofday(&tv, nullptr);
     float frac = (t.tm_sec + tv.tv_usec / 1e6f) / 60.0f;
-    int w = (int)(280 * frac);
+    int w = (int)(292 * frac);
     if (w > 2) {
-      for (int r = 0; r < 3; r++) g->drawGradientHLine(20, 100 + r, w, C_TEAL, C_GOLD);
-      g->fillSmoothCircle(20 + w, 101, 3, C_WHITE);
+      int half = w / 2;
+      for (int r = 0; r < 3; r++) {
+        g->drawGradientHLine(14, 90 + r, half, C_TEAL, C_VIOLET);
+        g->drawGradientHLine(14 + half, 90 + r, w - half, C_VIOLET, C_GOLD);
+      }
+      g->fillSmoothCircle(14 + w, 91, 6, g->color888(255, 214, 120) & 0xFFFFFF);
+      g->fillSmoothCircle(14 + w, 91, 3, C_WHITE);
     }
-    // วันที่ไทย
-    int dx = 20;
-    ThaiId wd = (ThaiId)(TH_WDT_0 + t.tm_wday);
-    thai(wd, dx, 116, C_WHITE);
-    dx += thaiW(wd) + 4;
-    txt(String(t.tm_mday), dx, 116, 14, C_WHITE, middle_left);
-    dx += txtW(String(t.tm_mday), 14) + 5;
-    ThaiId mon = (ThaiId)(TH_MON_0 + t.tm_mon);
-    thai(mon, dx, 116, C_WHITE);
-    dx += thaiW(mon) + 5;
-    txt(String(t.tm_year + 1900 + 543), dx, 116, 14, C_WHITE, middle_left);
-    txt("UTC+7", 300, 116, 9, C_MUTED, middle_right);
+    // วันที่ในแถบไล่สีเรืองแสง
+    ThaiId wd = (ThaiId)(TH_WDB_0 + t.tm_wday);
+    ThaiId mon = (ThaiId)(TH_MONB_0 + t.tm_mon);
+    String day = String(t.tm_mday), year = String(t.tm_year + 1900 + 543);
+    int cw = 14 + thaiW(wd) + 8 + txtW(day, 18) + 6 + thaiW(mon) + 6 + txtW(year, 18) + 14;
+    int cx0 = 10, cy0 = 100, ch = 26;
+    g->fillSmoothRoundRect(cx0, cy0, cw, ch, 13, C_TEAL);
+    for (int r = 2; r < ch - 2; r++) g->drawGradientHLine(cx0 + 8, cy0 + r, cw - 16, RGB(0, 150, 255), RGB(150, 70, 255));
+    g->fillSmoothRoundRect(cx0 + cw - 16, cy0, 16, ch, 8, RGB(150, 70, 255));
+    g->fillSmoothRoundRect(cx0, cy0, 16, ch, 8, RGB(0, 150, 255));
+    int dx = cx0 + 14, dy = cy0 + ch / 2;
+    thai(wd, dx, dy, C_WHITE);
+    dx += thaiW(wd) + 8;
+    txt(day, dx, dy, 18, C_WHITE, middle_left);
+    dx += txtW(day, 18) + 6;
+    thai(mon, dx, dy, C_WHITE);
+    dx += thaiW(mon) + 6;
+    txt(year, dx, dy, 18, C_WHITE, middle_left);
+    // ข้างแถบวันที่: พระอาทิตย์ขึ้น/ตก
+    if (Wx && Wx->valid && cw < 230) {
+      txt(Wx->sunrise, 308, 106, 9, C_GOLD, middle_right);
+      txt(Wx->sunset, 308, 120, 9, C_VIOLET, middle_right);
+    }
   }
   if (Wx && Wx->valid) {
     const Weather& w = *Wx;
-    icon(ICONS_M, iconFor(w.weatherCode, w.isDay), 14, 145);
-    txt(f0(w.temp) + "°", 74, 167, 24, C_WHITE, middle_left);
-    txt(f0(w.feelsLike) + "°", 150, 158, 14, C_FEEL, middle_center);
-    txt(w.rainChance < 0 ? String("-") : String(w.rainChance) + "%", 190, 158, 14, C_RAIN, middle_center);
-    if (A && A->valid) txt(f0(A->pm25), 230, 158, 14, pmColor(A->pm25), middle_center);
+    icon(ICONS_M, iconFor(w.weatherCode, w.isDay), 12, 139);
+    txt(f0(w.temp) + "°", 72, 161, 24, C_WHITE, middle_left);
+    txt(f0(w.feelsLike) + "°", 150, 154, 14, C_FEEL, middle_center);
+    txt(w.rainChance < 0 ? String("-") : String(w.rainChance) + "%", 190, 154, 14, C_RAIN, middle_center);
+    if (A && A->valid) txt(f0(A->pm25), 230, 154, 14, pmColor(A->pm25), middle_center);
     float uv = w.hCount > 0 && !isnan(w.hUv[0]) ? w.hUv[0] : w.uvMax;
-    txt(f0(uv), 270, 158, 14, uvColor(uv), middle_center);
+    txt(f0(uv), 270, 154, 14, uvColor(uv), middle_center);
     drawTicker();
   } else {
-    thai(TH_NO_DATA, 160, 167, C_MUTED, 1);
+    thai(TH_NO_DATA, 160, 161, C_MUTED, 1);
+  }
+  pageDots(160, 233);
+  endFrame();
+}
+
+// ---------------- หน้า 2: สรุปวันนี้ ----------------
+void tileValue(int i, const String& v, uint32_t col) {
+  int x = 10 + (i % 2) * 154, y = 30 + (i / 2) * 56;
+  txt(v, x + 14, y + 33, 18, col, middle_left);
+}
+int tileSubX(int i) { return 10 + (i % 2) * 154 + 140; }
+int tileSubY(int i) { return 30 + (i / 2) * 56 + 34; }
+
+void drawSummary() {
+  beginFrame(BG_SUM);
+  headerClock();
+  if (!Wx || !Wx->valid) {
+    thai(TH_NO_DATA, 160, 120, C_MUTED, 1);
+    endFrame();
+    return;
+  }
+  const Weather& w = *Wx;
+  // 1) อุณหภูมิ ต่ำ–สูง + ชั่วโมงที่ร้อนสุด
+  tileValue(0, f0(w.tempMin) + "° - " + f0(w.tempMax) + "°", C_WHITE);
+  int hot = -1;
+  for (int i = 0; i < w.hCount && i < 12; i++) if (hot < 0 || w.hTemp[i] > w.hTemp[hot]) hot = i;
+  if (hot >= 0) {
+    String h = hh(w.hHour[hot]);
+    txt(h, tileSubX(0), tileSubY(0) - 8, 9, C_FEEL, middle_right);
+    thai(TH_S_HOTTEST, tileSubX(0), tileSubY(0) + 6, C_MUTED, 2);
+  }
+  // 2) ฝน
+  int r0 = -1, r1 = -1, rmax = 0;
+  for (int i = 0; i < w.hCount && i < 12; i++) {
+    rmax = max(rmax, w.hRain[i]);
+    if (w.hRain[i] >= 50) { if (r0 < 0) r0 = i; r1 = i; }
+  }
+  if (r0 >= 0) {
+    tileValue(1, String(rmax) + "%", C_RAIN);
+    txt(hh(w.hHour[r0]) + "-" + hh(w.hHour[r1] + 1), tileSubX(1), tileSubY(1) - 8, 9, C_RAIN, middle_right);
+    thai(TH_S_RAINAT, tileSubX(1), tileSubY(1) + 6, C_MUTED, 2);
+  } else {
+    thai(TH_S_NORAIN, 10 + 154 + 14, 30 + 33, C_GREEN);
+  }
+  // 3) ฝุ่น
+  if (A && A->valid) {
+    int lv = WeatherApi::pm25Level(A->pm25);
+    tileValue(2, f0(A->pm25), pmColor(A->pm25));
+    if (lv >= 0) thai((ThaiId)(TH_AQS_0 + lv), tileSubX(2), tileSubY(2), pmColor(A->pm25), 2);
+  } else {
+    tileValue(2, "-", C_MUTED);
+  }
+  // 4) UV สูงสุด + ช่วงแดดแรง
+  tileValue(3, isnan(w.uvMax) ? String("-") : String(w.uvMax, 1), uvColor(w.uvMax));
+  int s0 = -1, s1 = -1;
+  for (int i = 0; i < w.hCount; i++) {
+    if (!isnan(w.hUv[i]) && w.hUv[i] >= 6) { if (s0 < 0) s0 = i; s1 = i; }
+    else if (s0 >= 0) break;
+  }
+  if (s0 >= 0) {
+    txt(hh(w.hHour[s0]) + "-" + hh(w.hHour[s1] + 1), tileSubX(3), tileSubY(3) - 8, 9, C_UV, middle_right);
+    thai(TH_S_UVHIGH, tileSubX(3), tileSubY(3) + 6, C_MUTED, 2);
+  } else {
+    thai(TH_S_UVOK, tileSubX(3), tileSubY(3), C_GREEN, 2);
+  }
+  // 5) พระอาทิตย์ขึ้น / ตก
+  tileValue(4, w.sunrise, C_GOLD);
+  txt(w.sunset, tileSubX(4), tileSubY(4) - 6, 14, C_VIOLET, middle_right);
+  thai(TH_S_SET, tileSubX(4), tileSubY(4) + 9, C_MUTED, 2);
+  // 6) ความชื้น · ลม
+  tileValue(5, w.humidity < 0 ? String("-") : String(w.humidity) + "%", C_TEAL);
+  txt(f0(w.windSpeed), tileSubX(5) - thaiW(TH_S_KMH) - 4, tileSubY(5), 14, C_WHITE, middle_right);
+  thai(TH_S_KMH, tileSubX(5), tileSubY(5), C_MUTED, 2);
+  // คำแนะนำวันนี้ (ป้ายสี)
+  struct Adv { ThaiId id; uint32_t c; } adv[5];
+  int n = 0;
+  if (r0 >= 0 || w.rainChance >= 50) adv[n++] = {TH_ADV_UMB, RGB(0, 120, 255)};
+  if (!isnan(w.uvMax) && w.uvMax >= 6) adv[n++] = {TH_ADV_SUN, RGB(220, 60, 190)};
+  if (A && A->valid && WeatherApi::pm25Level(A->pm25) >= 2) adv[n++] = {TH_ADV_MASK, RGB(230, 70, 80)};
+  if (WeatherApi::heatLevel(w.feelsLike) >= 2) adv[n++] = {TH_ADV_WATER, RGB(230, 120, 40)};
+  if (n == 0) adv[n++] = {TH_ADV_GOOD, RGB(30, 160, 90)};
+  int ax = 10;
+  for (int i = 0; i < n; i++) {
+    int wdt = thaiW(adv[i].id) + 18;
+    if (ax + wdt > 312) break;
+    g->fillSmoothRoundRect(ax, 202, wdt, 24, 12, adv[i].c);
+    thai(adv[i].id, ax + wdt / 2, 214, C_WHITE, 1);
+    ax += wdt + 6;
   }
   endFrame();
 }
@@ -524,6 +663,7 @@ void drawForecast() {
 void render() {
   screen = SCR_WEATHER;
   if (page == PAGE_HOME) drawHome();
+  else if (page == PAGE_SUM) drawSummary();
   else if (page == PAGE_NOW) drawNow();
   else drawForecast();
 }

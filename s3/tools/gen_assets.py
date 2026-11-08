@@ -18,27 +18,47 @@ OUT = os.path.join(HERE, 'out')
 SKETCH = os.path.join(HERE, '..', 'esp32-weather-s3')
 os.makedirs(OUT, exist_ok=True)
 
-GOLD = (250, 214, 140, 255)
-MUT = (200, 210, 228, 255)
+GOLD = (255, 214, 120, 255)
+MUT = (200, 214, 240, 255)
+CYAN = (0, 230, 255, 255)
 WHITE = (255, 255, 255, 255)
 
 
 # ---------------------------------------------------------------- พื้นหลัง
 def aurora_base():
-    im = grad(W, H, (12, 18, 38), (22, 26, 48)).convert('RGBA')
-    for (cx, cy, rx, ry, c) in [(70, 20, 170, 60, (40, 230, 200, 135)), (260, 10, 150, 55, (130, 120, 255, 120)),
-                                (300, 230, 160, 50, (60, 120, 255, 60))]:
+    im = grad(W, H, (10, 14, 40), (26, 14, 52)).convert('RGBA')
+    for (cx, cy, rx, ry, c) in [(60, 10, 180, 60, (0, 220, 255, 140)), (270, 20, 160, 60, (200, 80, 255, 130)),
+                                (300, 240, 170, 60, (255, 90, 170, 70)), (20, 240, 140, 50, (0, 160, 255, 60))]:
         l = layer(im)
         ImageDraw.Draw(l).ellipse([(cx - rx) * K, (cy - ry) * K, (cx + rx) * K, (cy + ry) * K], fill=c)
         im = Image.alpha_composite(im, l.filter(ImageFilter.GaussianBlur(28 * K)))
-    return im
+    # ตารางเส้นบาง ๆ แบบ HUD
+    l = layer(im)
+    d = ImageDraw.Draw(l)
+    for x in range(0, 321, 20):
+        d.line([(x * K, 0), (x * K, 240 * K)], fill=(120, 200, 255, 12), width=1)
+    for y in range(0, 241, 20):
+        d.line([(0, y * K), (320 * K, y * K)], fill=(120, 200, 255, 12), width=1)
+    return Image.alpha_composite(im, l)
 
 
-def gcard(im, box, r=12):
-    return glass(im, box, r=r, fill=(255, 255, 255, 30), line=(250, 214, 140, 130))
+def brackets(im, box, col=(0, 230, 255, 220), ln=8):
+    # มุมแบบ HUD
+    x0, y0, x1, y1 = box
+    l = layer(im)
+    d = ImageDraw.Draw(l)
+    for (x, y, dx, dy) in [(x0, y0, 1, 1), (x1, y0, -1, 1), (x0, y1, 1, -1), (x1, y1, -1, -1)]:
+        d.line([(x * K, y * K), ((x + dx * ln) * K, y * K)], fill=col, width=int(1.6 * K))
+        d.line([(x * K, y * K), (x * K, (y + dy * ln) * K)], fill=col, width=int(1.6 * K))
+    return Image.alpha_composite(Image.alpha_composite(im, l.filter(ImageFilter.GaussianBlur(2 * K))), l)
 
 
-def hline(im, x0, x1, y, col=(250, 214, 140, 120)):
+def gcard(im, box, r=12, accent=(0, 230, 255, 220)):
+    im = glass(im, box, r=r, fill=(255, 255, 255, 26), line=(150, 200, 255, 90))
+    return brackets(im, box, accent)
+
+
+def hline(im, x0, x1, y, col=(0, 230, 255, 110)):
     l = layer(im)
     ImageDraw.Draw(l).line([(x0 * K, y * K), (x1 * K, y * K)], fill=col, width=K)
     return Image.alpha_composite(im, l)
@@ -52,17 +72,32 @@ def header(im, title):
 def bg_home():
     im = aurora_base()
     l = layer(im)
-    ImageDraw.Draw(l).rounded_rectangle([20 * K, 100 * K, 300 * K, 103 * K], 2 * K, fill=(255, 255, 255, 30))
+    ImageDraw.Draw(l).rounded_rectangle([14 * K, 90 * K, 306 * K, 93 * K], 2 * K, fill=(255, 255, 255, 35))
     im = Image.alpha_composite(im, l)
-    im = gcard(im, (12, 138, 308, 196))
+    im = gcard(im, (10, 132, 310, 190))
     for i, lab in enumerate(['รู้สึก', 'ฝน', 'PM2.5', 'UV']):
         x = 150 + i * 40
-        im = text(im, (x, 182), lab, 9, MUT, 'mm', b=False)
+        im = text(im, (x, 176), lab, 9, MUT, 'mm', b=False)
         if i:
             l = layer(im)
-            ImageDraw.Draw(l).line([((x - 20) * K, 148 * K), ((x - 20) * K, 188 * K)], fill=(255, 255, 255, 30), width=K)
+            ImageDraw.Draw(l).line([((x - 20) * K, 142 * K), ((x - 20) * K, 182 * K)], fill=(255, 255, 255, 40), width=K)
             im = Image.alpha_composite(im, l)
-    im = glass(im, (12, 204, 308, 228), r=12, fill=(90, 170, 255, 34), line=(120, 190, 255, 120))
+    im = glass(im, (10, 198, 310, 226), r=12, fill=(0, 170, 255, 40), line=(0, 200, 255, 140))
+    return im
+
+
+def bg_summary():
+    im = header(aurora_base(), 'สรุปวันนี้')
+    tiles = [('อุณหภูมิวันนี้', (255, 150, 90, 255)), ('ฝน', (90, 170, 255, 255)), ('ฝุ่น PM2.5', (120, 240, 160, 255)),
+             ('รังสี UV', (255, 100, 220, 255)), ('พระอาทิตย์ขึ้น / ตก', (255, 214, 120, 255)), ('ความชื้น · ลม', (0, 230, 255, 255))]
+    for i, (lab, c) in enumerate(tiles):
+        x = 10 + (i % 2) * 154
+        y = 30 + (i // 2) * 56
+        im = gcard(im, (x, y, x + 146, y + 50), r=10, accent=c)
+        l = layer(im)
+        ImageDraw.Draw(l).rounded_rectangle([(x + 4) * K, (y + 10) * K, (x + 7) * K, (y + 40) * K], 2 * K, fill=c)
+        im = Image.alpha_composite(im, l)
+        im = text(im, (x + 14, y + 11), lab, 9, MUT, 'lm', b=False)
     return im
 
 
@@ -102,7 +137,7 @@ def to_jpeg(img, name):
     rgb = finish(img)
     rgb.save(os.path.join(OUT, name + '.png'))
     buf = io.BytesIO()
-    rgb.save(buf, 'JPEG', quality=93, subsampling=0)
+    rgb.save(buf, 'JPEG', quality=88, subsampling=0)
     return buf.getvalue()
 
 
@@ -306,6 +341,20 @@ TEXTS += [
     ('WF_ERR_PASS', 'รหัสผ่านไม่ถูกต้อง ลองใหม่อีกครั้ง', 12, True),
     ('WF_ERR_OTHER', 'เชื่อมต่อไม่สำเร็จ ลองใหม่อีกครั้ง', 12, True),
     ('WF_RETRYING', 'กำลังลองเชื่อมต่อ Wi-Fi เดิมอีกครั้ง...', 12, False),
+    ('WDB_0', 'วันอาทิตย์', 15, True), ('WDB_1', 'วันจันทร์', 15, True), ('WDB_2', 'วันอังคาร', 15, True),
+    ('WDB_3', 'วันพุธ', 15, True), ('WDB_4', 'วันพฤหัสบดี', 15, True), ('WDB_5', 'วันศุกร์', 15, True),
+    ('WDB_6', 'วันเสาร์', 15, True),
+    ('MONB_0', 'ม.ค.', 15, True), ('MONB_1', 'ก.พ.', 15, True), ('MONB_2', 'มี.ค.', 15, True), ('MONB_3', 'เม.ย.', 15, True),
+    ('MONB_4', 'พ.ค.', 15, True), ('MONB_5', 'มิ.ย.', 15, True), ('MONB_6', 'ก.ค.', 15, True), ('MONB_7', 'ส.ค.', 15, True),
+    ('MONB_8', 'ก.ย.', 15, True), ('MONB_9', 'ต.ค.', 15, True), ('MONB_10', 'พ.ย.', 15, True), ('MONB_11', 'ธ.ค.', 15, True),
+    ('UPD', 'อัปเดต', 9, False), ('MIN_AGO', 'นาทีที่แล้ว', 9, False), ('JUST_NOW', 'อัปเดตเมื่อสักครู่', 9, False),
+    ('S_HOTTEST', 'ร้อนสุด', 9, False), ('S_NORAIN', 'ไม่มีฝน', 18, True), ('S_RAINAT', 'ช่วง', 9, False),
+    ('S_UVHIGH', 'แดดแรง', 9, False), ('S_UVOK', 'แดดไม่แรง', 9, False), ('S_SET', 'ตก', 9, False),
+    ('AQS_0', 'ดีมาก', 10, True), ('AQS_1', 'ดี', 10, True), ('AQS_2', 'ปานกลาง', 10, True),
+    ('AQS_3', 'เริ่มมีผล', 10, True), ('AQS_4', 'มีผลต่อสุขภาพ', 10, True),
+    ('ADV_UMB', 'พกร่ม', 10, True), ('ADV_SUN', 'ทากันแดด', 10, True), ('ADV_MASK', 'ใส่หน้ากาก', 10, True),
+    ('ADV_WATER', 'ดื่มน้ำบ่อย ๆ', 10, True), ('ADV_GOOD', 'อากาศดี ออกไปข้างนอกได้', 10, True),
+    ('S_KMH', 'กม./ชม.', 9, False),
     ('FW_WAIT', 'ห้ามถอดสาย บอร์ดจะรีสตาร์ทเอง', 12, False),
 ]
 
@@ -337,14 +386,15 @@ def main():
              'struct ThaiAsset { uint16_t w, h; const uint8_t* data; };', '']
     total = 0
     # backgrounds
-    for name, fn in [('BG_HOME', bg_home), ('BG_NOW', bg_now), ('BG_FC', bg_fc), ('BG_PLAIN', bg_plain)]:
+    for name, fn in [('BG_HOME', bg_home), ('BG_SUM', bg_summary), ('BG_NOW', bg_now), ('BG_FC', bg_fc), ('BG_PLAIN', bg_plain)]:
         j = to_jpeg(fn(), name.lower())
         total += len(j)
         parts.append(carray(name + '_JPG', j))
         parts.append(f'static const ImgAsset {name} = {{{name}_JPG, {len(j)}, 320, 240}};')
     # glyph sets
-    sets = [('GOLD', '0123456789:°', 56, (255, 232, 176), (205, 150, 70), (230, 170, 80)),
-            ('SEC', '0123456789:', 26, (255, 255, 255), (150, 230, 215), None)]
+    sets = [('CLOCK', '0123456789:', 74, (255, 246, 210), (255, 160, 50), (255, 150, 60)),
+            ('GOLD', '0123456789:°', 56, (255, 240, 190), (255, 165, 60), (255, 150, 60)),
+            ('SEC', '0123456789:', 30, (210, 255, 255), (0, 200, 255), (0, 180, 255))]
     for name, chars, px, c1, c2, glow in sets:
         gs = glyph_set(chars, px, c1, c2, glow, name=name.lower())
         entries = []
