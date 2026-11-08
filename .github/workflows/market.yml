@@ -1,8 +1,8 @@
-name: market data and radar
+name: market data
 
 on:
   schedule:
-    # ทุก 10 นาที ตลอดวัน (ข้อมูลตลาด + เรดาร์ฝน)
+    # ทุก 10 นาที ตลอดวัน (ราคาทอง / หุ้น)
     - cron: "*/10 * * * *"
   workflow_dispatch:
 
@@ -24,22 +24,11 @@ jobs:
           node-version: 20
       - name: Collect market data
         run: node server/collect.mjs /tmp/market.json
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Build rain radar
-        continue-on-error: true
-        run: |
-          pip install --quiet pillow
-          mkdir -p /tmp/radar
-          curl -sfL -o /tmp/radar/base_v2.png "https://raw.githubusercontent.com/${{ github.repository }}/market-data/radar/base_v2.png" || rm -f /tmp/radar/base_v2.png
-          RADAR_BASEMAP_CACHE=/tmp/radar/base_v2.png python server/radar.py /tmp/radar
       - name: Publish to market-data branch
         run: |
           mkdir -p /tmp/out && cd /tmp/out
           git init -q -b market-data
           cp /tmp/market.json market.json
-          if [ -d /tmp/radar ]; then mkdir -p radar && cp /tmp/radar/* radar/; fi
-          git add market.json radar 2>/dev/null || git add market.json
+          git add market.json
           git -c user.name="market-bot" -c user.email="actions@github.com" commit -q -m "market data $(date -u +%FT%TZ)"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" market-data

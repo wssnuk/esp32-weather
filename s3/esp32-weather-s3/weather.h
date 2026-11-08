@@ -49,6 +49,11 @@ struct Weather {
   float hTemp[24];
   int hRain[24];
   float hUv[24];
+  float hPrecip[24];          // ปริมาณฝนรายชั่วโมง (มม.)
+  // ปริมาณฝนทุก 15 นาที 2 ชม. ข้างหน้า (มม. ต่อ 15 นาที)
+  int mCount = 0;
+  int mMinute[8];             // นาทีของวัน (0-1439) ของช่วงนั้น
+  float mPrecip[8];
   unsigned long fetchedAt = 0;  // millis() ตอนดึงข้อมูล
   String error;
 };

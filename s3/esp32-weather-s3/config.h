@@ -2,7 +2,7 @@
 #pragma once
 
 #define APP_NAME            "ESP32 Weather S3"
-#define APP_VERSION         "1.3.4"
+#define APP_VERSION         "1.4.0"
 #define DEVICE_HOSTNAME     "esp32-weather-s3"        // เข้าเว็บได้ที่ http://esp32-weather.local
 
 // เมืองเริ่มต้น (เปลี่ยนได้ภายหลังจากหน้าเว็บ หรือพิมพ์ใน Serial Monitor)
@@ -26,9 +26,8 @@
 // ข้อมูลตลาด (ทอง/หุ้น) — ไฟล์ที่ GitHub Actions อัปเดตให้
 #define MARKET_DATA_URL     "https://raw.githubusercontent.com/wssnuk/esp32-weather/market-data/market.json"
 #define MARKET_UPDATE_MS    (5UL * 60UL * 1000UL)
-// แผนที่ฝน (GitHub Actions สร้างทุก 10 นาที)
-#define RADAR_DATA_URL      "https://raw.githubusercontent.com/wssnuk/esp32-weather/market-data/radar/"
-#define RADAR_UPDATE_MS     (10UL * 60UL * 1000UL)
+// เรดาร์ฝน (RainViewer อัปเดตทุก 10 นาที) — บอร์ดตรวจทุก 5 นาที
+#define RADAR_UPDATE_MS     (5UL * 60UL * 1000UL)
 // เสียง
 #define SOUND_VOLUME        0xBF                     // 0xBF = ดังปกติ, ลดลง = เบาลง
 #define CHIME_FROM_HOUR     7                        // เสียงบอกเวลาทุกชั่วโมง 07:00-21:00

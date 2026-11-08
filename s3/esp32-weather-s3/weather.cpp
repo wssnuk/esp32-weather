@@ -66,7 +66,8 @@ bool fetch(double lat, double lon, Weather& w) {
                "wind_direction_10m"
                "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,"
                "uv_index_max,sunrise,sunset"
-               "&hourly=temperature_2m,precipitation_probability,uv_index&forecast_hours=24"
+               "&hourly=temperature_2m,precipitation_probability,precipitation,uv_index&forecast_hours=24"
+               "&minutely_15=precipitation&forecast_minutely_15=8"
                "&timezone=auto&forecast_days=4";
   JsonDocument doc;
   String err;
@@ -117,8 +118,19 @@ bool fetch(double lat, double lon, Weather& w) {
     w.hTemp[i] = f(hr["temperature_2m"][i]);
     w.hRain[i] = n(hr["precipitation_probability"][i]);
     w.hUv[i] = f(hr["uv_index"][i]);
+    w.hPrecip[i] = f(hr["precipitation"][i]);
     w.hCount = i + 1;
     if (i < 3 && w.hRain[i] >= 0) w.rainNext2h = max(w.rainNext2h, w.hRain[i]);
+  }
+  JsonObjectConst mq = doc["minutely_15"];
+  JsonArrayConst mt = mq["time"];
+  w.mCount = 0;
+  for (size_t i = 0; i < mt.size() && i < 8; i++) {
+    String tm = mt[i] | "";
+    if (tm.length() < 16) continue;
+    w.mMinute[w.mCount] = tm.substring(11, 13).toInt() * 60 + tm.substring(14, 16).toInt();
+    float v = f(mq["precipitation"][i]);
+    w.mPrecip[w.mCount++] = isnan(v) ? 0 : v;
   }
   w.fetchedAt = millis();
   w.error = "";

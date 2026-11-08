@@ -118,10 +118,34 @@ bool changeCity(const String& nameIn, String& message) {
   settings.lat = lat;
   settings.lon = lon;
   Store::saveLocation(display, lat, lon);
+  Radar::setLocation(lat, lon);
   weather.valid = false;
   requestWeatherRefresh();
   message = "ตั้งเป็น " + display + " (" + String(lat, 3) + ", " + String(lon, 3) + ") แล้ว";
   Serial.println("[City] " + message);
+  return true;
+}
+
+bool setExactLocation(double lat, double lon, const String& name, String& message) {
+  if (isnan(lat) || isnan(lon) || fabs(lat) > 85 || fabs(lon) > 180) {
+    message = "พิกัดไม่ถูกต้อง";
+    return false;
+  }
+  // จอแสดงได้เฉพาะตัวอักษรละติน
+  String n;
+  for (char c : name) if (c >= 32 && c < 127) n += c;
+  n.trim();
+  if (n.isEmpty()) n = "My location";
+  if (n.length() > 28) n = n.substring(0, 28);
+  settings.city = n;
+  settings.lat = lat;
+  settings.lon = lon;
+  Store::saveLocation(n, lat, lon);
+  Radar::setLocation(lat, lon);
+  weather.valid = false;
+  requestWeatherRefresh();
+  message = "ตั้งตำแหน่งเป็น " + n + " (" + String(lat, 4) + ", " + String(lon, 4) + ") แล้ว";
+  Serial.println("[Location] " + message);
   return true;
 }
 
@@ -280,17 +304,18 @@ static void handleButton() {
   }
 }
 
-// เตือนด้วยเสียงเมื่อแผนที่ฝนเห็นฝนกำลังเข้ามา/เริ่มตกบริเวณนี้ (ไม่เกินชั่วโมงละครั้ง ไม่เตือนกลางคืน)
+// เตือนด้วยเสียงเมื่อเรดาร์เห็นฝนกำลังเข้ามา/เริ่มตกบริเวณนี้ (ไม่เกินชั่วโมงละครั้ง ไม่เตือนกลางคืน)
 static void radarAlert() {
-  static uint32_t seenGen = 0;
+  static uint32_t seen = 0;
   static unsigned long lastAlert = 0;
   static bool wasRaining = false, wasComing = false;
-  const RadarData* d = Radar::get();
-  if (!d || !d->valid || d->generated == seenGen || !Radar::usableAt(settings.lat, settings.lon)) return;
-  seenGen = d->generated;
-  bool coming = d->approaching && d->etaMin > 0 && d->etaMin <= 60;
-  bool trigger = (d->rainingHere && !wasRaining) || (coming && !wasComing);
-  wasRaining = d->rainingHere;
+  RadarInfo r = Radar::info();
+  if (!r.ready || !r.covered || r.frames == 0 || r.frameTime[r.frames - 1] == seen) return;
+  seen = r.frameTime[r.frames - 1];
+  bool raining = r.hereMmh >= 0.5f;
+  bool coming = r.approaching && r.etaMin > 0 && r.etaMin <= 45;
+  bool trigger = (raining && !wasRaining) || (coming && !wasComing);
+  wasRaining = raining;
   wasComing = coming;
   struct tm t;
   bool night = getLocalTime(&t, 0) && (t.tm_hour >= NIGHT_START_HOUR || t.tm_hour < NIGHT_END_HOUR);
@@ -356,6 +381,7 @@ void setup() {
     }
   }
   Web::beginDashboard();
+  Radar::setLocation(settings.lat, settings.lon);
   Radar::begin();
   Display::showLoading();
   printHelp();

@@ -101,15 +101,53 @@ def bg_summary():
     return im
 
 
-def bg_radar():
-    im = header(aurora_base(), 'แผนที่ฝน')
-    im = gcard(im, (238, 28, 312, 232), r=10)
-    for i, (c, t) in enumerate([((60, 200, 90), 'เบา'), ((240, 220, 60), 'ปานกลาง'), ((240, 90, 60), 'หนัก'), ((220, 40, 180), 'หนักมาก')]):
-        y = 176 + i * 13
-        l = layer(im)
-        ImageDraw.Draw(l).rounded_rectangle([246 * K, (y - 3) * K, 256 * K, (y + 4) * K], K, fill=c + (255,))
-        im = Image.alpha_composite(im, l)
-        im = text(im, (260, y), t, 8, MUT, 'lm', b=False)
+def bg_rain():
+    im = header(aurora_base(), 'ฝนใน 2 ชั่วโมงข้างหน้า')
+    im = gcard(im, (10, 30, 310, 84), r=10, accent=(90, 170, 255, 230))
+    im = gcard(im, (10, 90, 310, 164), r=10, accent=(90, 170, 255, 230))
+    im = text(im, (18, 99), 'ทุก 15 นาที (มม.)', 9, MUT, 'lm', b=False)
+    im = gcard(im, (10, 170, 310, 232), r=10, accent=(170, 100, 255, 230))
+    im = text(im, (18, 179), '12 ชั่วโมงข้างหน้า (มม.)', 9, MUT, 'lm', b=False)
+    return im
+
+
+def bg_air():
+    im = header(aurora_base(), 'คุณภาพอากาศ')
+    im = gcard(im, (10, 30, 166, 140), r=10, accent=(120, 240, 160, 230))
+    im = text(im, (20, 41), 'ฝุ่น PM2.5', 9, MUT, 'lm', b=False)
+    im = text(im, (156, 41), 'มคก./ลบ.ม.', 8, MUT, 'rm', b=False)
+    im = gcard(im, (172, 30, 310, 82), r=10)
+    im = text(im, (182, 41), 'ฝุ่น PM10', 9, MUT, 'lm', b=False)
+    im = gcard(im, (172, 88, 310, 140), r=10)
+    im = text(im, (182, 99), 'ดัชนี AQI (US)', 9, MUT, 'lm', b=False)
+    im = gcard(im, (10, 146, 310, 232), r=10, accent=(120, 240, 160, 230))
+    im = text(im, (18, 156), 'PM2.5 ล่วงหน้า 12 ชั่วโมง', 9, MUT, 'lm', b=False)
+    return im
+
+
+def bg_market():
+    im = header(aurora_base(), 'ทองคำ · หุ้นไทย')
+    im = gcard(im, (10, 30, 310, 120), r=10, accent=(255, 214, 120, 230))
+    im = text(im, (20, 41), 'ทองคำแท่ง 96.5%', 9, GOLD, 'lm', b=False)
+    im = text(im, (20, 64), 'รับซื้อ', 9, MUT, 'lm', b=False)
+    im = text(im, (20, 90), 'ขายออก', 9, MUT, 'lm', b=False)
+    im = text(im, (20, 110), 'ทองรูปพรรณ ขาย', 8, MUT, 'lm', b=False)
+    im = gcard(im, (10, 126, 310, 232), r=10, accent=(0, 230, 255, 230))
+    im = text(im, (20, 137), 'ดัชนี SET', 9, CYAN, 'lm', b=False)
+    im = text(im, (20, 206), 'SET50', 8, MUT, 'lm', b=False)
+    im = text(im, (20, 222), 'ดอลลาร์ (บาท)', 8, MUT, 'lm', b=False)
+    return im
+
+
+def bg_sky():
+    im = header(aurora_base(), 'ดวงอาทิตย์ · ดวงจันทร์')
+    # เส้นทางดวงอาทิตย์ (ครึ่งวงรี) + เส้นขอบฟ้า
+    l = layer(im)
+    d = ImageDraw.Draw(l)
+    d.arc([30 * K, 44 * K, 290 * K, 256 * K], 180, 360, fill=(255, 214, 120, 120), width=int(1.5 * K))
+    d.line([(16 * K, 150 * K), (304 * K, 150 * K)], fill=(255, 255, 255, 60), width=K)
+    im = Image.alpha_composite(im, l)
+    im = gcard(im, (10, 170, 310, 232), r=10, accent=(170, 100, 255, 230))
     return im
 
 
@@ -149,7 +187,7 @@ def to_jpeg(img, name):
     rgb = finish(img)
     rgb.save(os.path.join(OUT, name + '.png'))
     buf = io.BytesIO()
-    rgb.save(buf, 'JPEG', quality=88, subsampling=0)
+    rgb.save(buf, 'JPEG', quality=85, subsampling=0)
     return buf.getvalue()
 
 
@@ -367,14 +405,30 @@ TEXTS += [
     ('ADV_UMB', 'พกร่ม', 10, True), ('ADV_SUN', 'ทากันแดด', 10, True), ('ADV_MASK', 'ใส่หน้ากาก', 10, True),
     ('ADV_WATER', 'ดื่มน้ำบ่อย ๆ', 10, True), ('ADV_GOOD', 'อากาศดี ออกไปข้างนอกได้', 10, True),
     ('S_KMH', 'กม./ชม.', 9, False),
-    ('R_MODEL', '(แบบจำลอง)', 9, False), ('R_RADAR', '(เรดาร์)', 9, False),
-    ('R_STATUS', 'สถานะ', 9, False), ('R_HERE', 'ฝนตก', 13, True), ('R_HERE2', 'บริเวณนี้', 13, True),
-    ('R_COMING', 'ฝนกำลังมา', 12, True), ('R_NEAR', 'มีฝนห่าง', 11, True), ('R_NONE', 'ไม่มีฝน', 13, True),
-    ('R_NONE2', 'ในรัศมี 40 กม.', 9, False), ('R_KM', 'กม.', 9, False), ('R_MIN', 'นาที', 9, False),
-    ('R_NOW', 'ตอนนี้', 8, False), ('R_OUTSIDE', 'แผนที่ฝนครอบคลุมเฉพาะกรุงเทพฯ และปริมณฑล', 9, False), ('R_ETA', 'ถึงในประมาณ', 9, False), ('R_NODATA', 'กำลังโหลดแผนที่...', 12, False),
-    ('DIR_0', 'ทิศเหนือ', 9, False), ('DIR_1', 'ทิศ ตอ.เฉียงเหนือ', 9, False), ('DIR_2', 'ทิศตะวันออก', 9, False),
-    ('DIR_3', 'ทิศ ตอ.เฉียงใต้', 9, False), ('DIR_4', 'ทิศใต้', 9, False), ('DIR_5', 'ทิศ ตต.เฉียงใต้', 9, False),
-    ('DIR_6', 'ทิศตะวันตก', 9, False), ('DIR_7', 'ทิศ ตต.เฉียงเหนือ', 9, False),
+    
+    ('R_HERE', 'ฝนตกบริเวณนี้', 11, True),
+    ('R_NEAR', 'มีฝนห่าง', 11, True), ('R_NONE', 'ไม่มีฝน', 11, True),
+    ('R_NONE2', 'ในรัศมี 80 กม.', 11, True), ('R_KM', 'กม.', 9, False), ('R_MIN', 'นาที', 9, False),
+    ('R_NOW', 'ตอนนี้', 8, False),  ('R_NODATA', 'กำลังโหลดเรดาร์...', 12, True),
+    ('R_TITLE', 'เรดาร์ฝน', 11, True), ('R_NOCOV', 'พื้นที่นี้ยังไม่มีเรดาร์ครอบคลุม', 11, True), ('R_MMH', 'มม./ชม.', 9, False),
+    ('R_ETA2', 'ถึงใน ~', 11, True),
+    ('RN_START', 'ฝนจะเริ่มตกในอีก', 14, True), ('RN_NONE', 'ไม่มีฝนใน 2 ชั่วโมงนี้', 14, True),
+    ('RN_NOW', 'ฝนกำลังตกอยู่', 14, True), ('RN_STOP', 'คาดว่าหยุดประมาณ', 9, False), ('RN_TOTAL', 'รวม 2 ชม.', 9, False),
+    ('RN_MM', 'มม.', 9, False), ('RN_LV0', 'ฝนเล็กน้อย', 9, True), ('RN_LV1', 'ฝนปานกลาง', 9, True),
+    ('RN_LV2', 'ฝนหนัก', 9, True), ('RN_LV3', 'ฝนหนักมาก', 9, True), ('RN_RADAR', 'เรดาร์ตอนนี้', 8, False),
+    ('RN_DRY', 'แห้ง', 9, False), ('RN_SRC', 'พยากรณ์ Open-Meteo', 8, False),
+    ('T_RAIN_IN', 'ฝนจะเริ่มตกในอีก', 10, True),
+    ('MK_NODATA', 'กำลังโหลดราคา...', 12, False), ('MK_EST', '(ประมาณ)', 8, False),
+    ('MK_OPEN', 'ตลาดเปิด', 8, True), ('MK_CLOSED', 'ตลาดปิด', 8, True),
+    ('SKY_DAY', 'กลางวันยาว', 9, False), ('SKY_HR', 'ชม.', 9, False), ('SKY_MIN', 'นาที', 9, False),
+    ('SKY_FULL', 'เต็มดวงในอีก', 9, False), ('SKY_NEW', 'เดือนดับในอีก', 9, False), ('SKY_DAYS', 'วัน', 9, False),
+    ('SKY_LIT', 'สว่าง', 9, False), ('SKY_NIGHT', 'กลางคืน', 9, True),
+    ('MOON_0', 'เดือนดับ', 13, True), ('MOON_1', 'ข้างขึ้น เสี้ยว', 13, True), ('MOON_2', 'ข้างขึ้น ครึ่งดวง', 13, True),
+    ('MOON_3', 'ข้างขึ้น ค่อนดวง', 13, True), ('MOON_4', 'จันทร์เต็มดวง', 13, True), ('MOON_5', 'ข้างแรม ค่อนดวง', 13, True),
+    ('MOON_6', 'ข้างแรม ครึ่งดวง', 13, True), ('MOON_7', 'ข้างแรม เสี้ยว', 13, True),
+    ('DIR_0', 'ทิศเหนือ', 10, False), ('DIR_1', 'ทิศ ตอ.เฉียงเหนือ', 10, False), ('DIR_2', 'ทิศตะวันออก', 10, False),
+    ('DIR_3', 'ทิศ ตอ.เฉียงใต้', 10, False), ('DIR_4', 'ทิศใต้', 10, False), ('DIR_5', 'ทิศ ตต.เฉียงใต้', 10, False),
+    ('DIR_6', 'ทิศตะวันตก', 10, False), ('DIR_7', 'ทิศ ตต.เฉียงเหนือ', 10, False),
     ('T_RADAR_A', 'กลุ่มฝนห่าง', 10, True), ('T_RADAR_B', 'กม. ถึงในประมาณ', 10, True), ('T_RADAR_C', 'นาที', 10, True),
     ('PRESET_Q', 'ภาพสว่างและชัดขึ้นไหม?', 16, True), ('PRESET_TAP', 'แตะจอ 1 ครั้ง = ใช้แบบนี้ต่อ', 12, False),
     ('PRESET_WAIT', 'ถ้าจอผิดปกติ ไม่ต้องทำอะไร ระบบจะกลับเป็นแบบเดิมเอง', 10, False), ('PRESET_NAME', 'โหมดภาพ', 16, True), ('VIVID_NAME', 'ความสดของสี', 16, True),
@@ -412,15 +466,15 @@ def main():
              'struct ThaiAsset { uint16_t w, h; const uint8_t* data; };', '']
     total = 0
     # backgrounds
-    for name, fn in [('BG_HOME', bg_home), ('BG_SUM', bg_summary), ('BG_RADAR', bg_radar), ('BG_NOW', bg_now),
-                     ('BG_FC', bg_fc), ('BG_PLAIN', bg_plain)]:
+    for name, fn in [('BG_HOME', bg_home), ('BG_SUM', bg_summary), ('BG_RAIN', bg_rain), ('BG_NOW', bg_now),
+                     ('BG_FC', bg_fc), ('BG_AIR', bg_air), ('BG_MARKET', bg_market), ('BG_SKY', bg_sky),
+                     ('BG_PLAIN', bg_plain)]:
         j = to_jpeg(fn(), name.lower())
         total += len(j)
         parts.append(carray(name + '_JPG', j))
         parts.append(f'static const ImgAsset {name} = {{{name}_JPG, {len(j)}, 320, 240}};')
     # glyph sets
     sets = [('CLOCK', '0123456789:', 74, (255, 246, 210), (255, 160, 50), (255, 150, 60)),
-            ('GOLD', '0123456789:°', 56, (255, 240, 190), (255, 165, 60), (255, 150, 60)),
             ('SEC', '0123456789:', 30, (210, 255, 255), (0, 200, 255), (0, 180, 255))]
     for name, chars, px, c1, c2, glow in sets:
         gs = glyph_set(chars, px, c1, c2, glow, name=name.lower())

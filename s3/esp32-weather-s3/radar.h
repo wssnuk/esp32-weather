@@ -1,25 +1,34 @@
 #pragma once
 #include <Arduino.h>
 
-// แผนที่ฝน (เรดาร์/แบบจำลอง) — ไฟล์ที่ GitHub Actions สร้างทุก 10 นาที (ดู server/radar.py)
-// ดาวน์โหลดใน task แยก เพื่อไม่ให้นาฬิกาสะดุด
-struct RadarData {
-  bool valid = false;
-  bool rainingHere = false, approaching = false;
-  float nearestKm = NAN, speedKmh = NAN, kmPerPx = 0.45f;
-  int bearing = -1, etaMin = -1;
-  bool model = true;              // true = แบบจำลองฝน (Open-Meteo), false = เรดาร์จริง
-  uint32_t generated = 0;
-  double lat = NAN, lon = NAN;
-  int w = 224, h = 204;
-  uint32_t frames[4] = {};
-  uint8_t* jpg[4] = {};
-  size_t len[4] = {};
-  unsigned long fetchedMs = 0;
+// เรดาร์ฝนจริง (RainViewer — รวมเรดาร์กรมอุตุนิยมวิทยา) บนแผนที่ Esri ตามพิกัดของบอร์ด
+// บอร์ดดาวน์โหลดและประกอบภาพเองใน task แยก (ไม่ทำให้นาฬิกาสะดุด)
+namespace lgfx { inline namespace v1 { class LovyanGFX; } }
+
+constexpr int RADAR_W = 320, RADAR_H = 240;   // เต็มจอ
+constexpr int RADAR_FRAMES = 6;               // ย้อนหลัง 1 ชั่วโมง (ทุก 10 นาที)
+
+struct RadarInfo {
+  bool ready = false;          // มีภาพอย่างน้อย 1 เฟรม
+  bool covered = true;         // พื้นที่นี้มีเรดาร์ครอบคลุม
+  int frames = 0;
+  uint32_t frameTime[RADAR_FRAMES] = {};  // epoch ของแต่ละเฟรม (เก่า → ใหม่)
+  float kmPerPx = 0.6f;
+  // วิเคราะห์จากเฟรมล่าสุด
+  float hereMmh = 0;           // ความแรงฝนตรงตำแหน่งนี้ (มม./ชม.)
+  float nearestKm = NAN;       // กลุ่มฝนที่ใกล้ที่สุด (≥ ฝนเบา) ในรัศมี 80 กม.
+  int bearing = -1;            // ทิศของกลุ่มฝน (องศา 0 = เหนือ)
+  float maxMmh = 0;            // ฝนแรงสุดในรัศมี 30 กม.
+  bool approaching = false;    // กลุ่มฝนเคลื่อนเข้าหา
+  float speedKmh = NAN;
+  int etaMin = -1;             // คาดว่าจะถึงในกี่นาที
+  uint32_t updatedAt = 0;      // epoch ที่ตรวจล่าสุด
+  String error;
 };
 
 namespace Radar {
-void begin();                     // เริ่ม task ดาวน์โหลด (เรียกหลังต่อ Wi-Fi แล้ว)
-const RadarData* get();           // ข้อมูลล่าสุด (nullptr ถ้ายังไม่มี)
-bool usableAt(double lat, double lon);  // แผนที่ครอบคลุมเมืองที่ตั้งไว้ไหม
+void begin();
+void setLocation(double lat, double lon);   // เปลี่ยนตำแหน่ง → โหลดแผนที่ใหม่
+RadarInfo info();                           // สำเนาข้อมูลล่าสุด
+bool drawFrame(int i, lgfx::LovyanGFX* dst); // วาดเฟรม i (0 = เก่าสุด) เต็มจอ
 }

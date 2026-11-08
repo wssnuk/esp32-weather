@@ -300,6 +300,16 @@ int drawGlyphs(const GlyphAsset* set, const char* s, int x, int top) {
   }
   return x;
 }
+int drawGlyphsScaled(const GlyphAsset* set, const char* s, int x, int top, float sc) {
+  for (const char* p = s; *p; p++) {
+    int gi = glyphIndex(*p);
+    if (gi > 10) continue;
+    const GlyphAsset& a = set[gi];
+    g->drawPng(a.data, a.len, x - (int)(a.pad * sc), top - (int)(a.pad * sc), 0, 0, 0, 0, sc, sc);
+    x += (int)(a.adv * sc);
+  }
+  return x;
+}
 int glyphsWidth(const GlyphAsset* set, const char* s) {
   int w = 0;
   for (const char* p = s; *p; p++) w += set[glyphIndex(*p)].adv;
@@ -410,15 +420,18 @@ int page = 0;  // ประกาศล่วงหน้า (ค่าจริ
 const Settings* S = nullptr;
 const Weather* Wx = nullptr;
 const AirQuality* A = nullptr;
+const Market* M = nullptr;
+constexpr int PAGE_COUNT = 9;
+enum { PAGE_HOME = 0, PAGE_SUM, PAGE_RADAR, PAGE_RAIN, PAGE_NOW, PAGE_FC, PAGE_AIR, PAGE_MARKET, PAGE_SKY };
 void pageDots(int cx, int y) {
-  for (int i = 0; i < 5; i++) {
-    int x = cx - 20 + i * 10;
+  for (int i = 0; i < PAGE_COUNT; i++) {
+    int x = cx - (PAGE_COUNT - 1) * 4 + i * 8;
     if (i == page) g->fillSmoothCircle(x, y, 3, C_TEAL);
-    else g->drawCircle(x, y, 2, RGB(140, 150, 180));
+    else g->fillSmoothCircle(x, y, 1.6f, RGB(140, 150, 180));
   }
 }
 void headerClock() {
-  pageDots(236, 12);
+  pageDots(238, 12);
   struct tm t;
   if (!getLocalTime(&t, 0)) return;
   char b[6];
@@ -427,8 +440,6 @@ void headerClock() {
 }
 
 // ---------------- สถานะ ----------------
-constexpr int PAGE_COUNT = 5;
-enum { PAGE_HOME = 0, PAGE_SUM, PAGE_RADAR, PAGE_NOW, PAGE_FC };
 
 enum Screen { SCR_NONE, SCR_WEATHER, SCR_MESSAGE, SCR_SETUP } screen = SCR_NONE;
 bool updating = false;
@@ -445,14 +456,47 @@ void drawWifi(int x, int y) {
     g->fillSmoothRoundRect(x + i * 5, y - 3 - i * 3, 3, 4 + i * 3, 1, i < bars ? C_TEAL : RGB(70, 80, 100));
 }
 
-// ข้อมูลแผนที่ฝนที่ใช้ได้กับเมืองที่ตั้งไว้ และยังไม่เก่าเกิน 45 นาที
-const RadarData* radarHere() {
-  const RadarData* d = Radar::get();
-  if (!d || !d->valid || !S || !Radar::usableAt(S->lat, S->lon)) return nullptr;
+// ข้อมูลเรดาร์ล่าสุด (อ่านจาก task เรดาร์ไม่เกิน 1 ครั้ง/วินาที)
+RadarInfo rinfo;
+unsigned long rinfoAt = 0;
+const RadarInfo& radarNow() {
+  if (!rinfoAt || millis() - rinfoAt > 1000) { rinfo = Radar::info(); rinfoAt = millis(); }
+  return rinfo;
+}
+// เรดาร์ใช้ได้ (มีภาพ ครอบคลุม และไม่เก่าเกิน 40 นาที)
+bool radarFresh(const RadarInfo& r) {
+  if (!r.ready || !r.covered || r.frames == 0) return false;
   time_t now = time(nullptr);
-  if (now > 1700000000 && now - (time_t)d->generated > 45 * 60) return nullptr;
+  return now < 1700000000 || now - (time_t)r.frameTime[r.frames - 1] < 40 * 60;
+}
+// ฝนจากพยากรณ์ราย 15 นาที: คืนนาทีที่จะเริ่มตก (0 = ตกอยู่), -1 = ไม่มีใน 2 ชม.
+int nowMinute() {
+  struct tm t;
+  if (!getLocalTime(&t, 0)) return -1;
+  return t.tm_hour * 60 + t.tm_min;
+}
+int minutesUntil(int slotMinute) {
+  int nm = nowMinute();
+  if (nm < 0) return 0;
+  int d = slotMinute - nm;
+  if (d < -720) d += 1440;
+  if (d > 720) d -= 1440;
   return d;
 }
+int modelRainStart() {
+  if (!Wx || Wx->mCount == 0) return -1;
+  for (int i = 0; i < Wx->mCount; i++)
+    if (Wx->mPrecip[i] >= 0.1f) {
+      int d = minutesUntil(Wx->mMinute[i]);
+      if (d > -15) return max(0, d);
+    }
+  return -1;
+}
+uint32_t rateColor(float mmh) {
+  return mmh < 2.5f ? RGB(110, 200, 255) : mmh < 10 ? RGB(0, 140, 255) : mmh < 50 ? RGB(255, 170, 0) : RGB(255, 60, 60);
+}
+ThaiId rateName(float mmh) { return mmh < 2.5f ? TH_RN_LV0 : mmh < 10 ? TH_RN_LV1 : mmh < 50 ? TH_RN_LV2 : TH_RN_LV3; }
+ThaiId dirName(int bearing) { return (ThaiId)(TH_DIR_0 + ((bearing + 22) % 360) / 45); }
 
 void drawTicker() {
   const Weather& w = *Wx;
@@ -463,7 +507,9 @@ void drawTicker() {
     if (w.hRain[i] >= 60) { at = i; break; }
   uint32_t dot = C_TEAL;
   int x = 38, y = 212;
-  const RadarData* rd = radarHere();
+  const RadarInfo& r = radarNow();
+  const RadarInfo* rd = radarFresh(r) ? &r : nullptr;
+  int startIn = modelRainStart();
   if (updating) {
     thai(TH_T_UPDATING, x, y, C_MUTED);
   } else if (rd && rd->approaching && rd->etaMin > 0 && !isnan(rd->nearestKm)) {
@@ -479,9 +525,16 @@ void drawTicker() {
     txt(String(rd->etaMin), x, y, 11, C_GOLD, middle_left);
     x += txtW(String(rd->etaMin), 11) + 5;
     thai(TH_T_RADAR_C, x, y, RGB(255, 225, 200));
-  } else if (rainingNow || (rd && rd->rainingHere)) {
+  } else if ((rd && rd->hereMmh >= 0.2f) || (!rd && rainingNow)) {
     dot = C_RAIN;
     thai(TH_T_RAIN_NOW, x, y, RGB(210, 230, 255));
+  } else if (startIn > 0) {
+    dot = C_RAIN;
+    thai(TH_T_RAIN_IN, x, y, RGB(210, 230, 255));
+    x += thaiW(TH_T_RAIN_IN) + 5;
+    txt(String(startIn), x, y, 11, C_GOLD, middle_left);
+    x += txtW(String(startIn), 11) + 5;
+    thai(TH_T_RADAR_C, x, y, RGB(210, 230, 255));
   } else if (at >= 0) {
     dot = C_RAIN;
     thai(TH_T_RAIN_AT, x, y, RGB(210, 230, 255));
@@ -688,114 +741,391 @@ void drawSummary() {
 }
 
 
-// ---------------- หน้า 3: แผนที่ฝน ----------------
-constexpr int MAP_X = 8, MAP_Y = 28, MAP_W = 224, MAP_H = 204, MAP_CX = MAP_X + MAP_W / 2, MAP_CY = MAP_Y + MAP_H / 2;
-LGFX_Sprite* rframes[4] = {};
-uint32_t rframesGen = 0;
-
-bool ensureRadarFrames(const RadarData* d) {
-  if (!d) return false;
-  if (rframesGen == d->generated && rframes[0]) return true;
-  for (int i = 0; i < 4; i++) {
-    if (!rframes[i]) {
-      rframes[i] = new LGFX_Sprite(gfx);
-      rframes[i]->setColorDepth(16);
-      rframes[i]->setPsram(true);
-      if (!rframes[i]->createSprite(MAP_W, MAP_H)) { delete rframes[i]; rframes[i] = nullptr; return false; }
-    }
-    rframes[i]->fillScreen(0);
-    rframes[i]->drawJpg(d->jpg[i], d->len[i], 0, 0);
-  }
-  rframesGen = d->generated;
-  return true;
-}
-
+// ---------------- หน้า 3: เรดาร์ฝนเต็มจอ ----------------
 // เส้นโปร่งแสง (ผสมกับภาพด้านล่าง)
 void blendLine(float x0, float y0, float x1, float y1, uint32_t col, uint8_t a) {
   int n = (int)max(fabsf(x1 - x0), fabsf(y1 - y0));
   uint8_t r = col >> 16, gg = (col >> 8) & 0xFF, b = col & 0xFF;
   for (int i = 0; i <= n; i++) {
     int x = (int)roundf(x0 + (x1 - x0) * i / max(1, n)), y = (int)roundf(y0 + (y1 - y0) * i / max(1, n));
+    if (x < 0 || y < 0 || x >= 320 || y >= 240) continue;
     auto c = g->readPixelRGB(x, y);
     g->drawPixel(x, y, g->color888(c.R8() + (r - c.R8()) * a / 255, c.G8() + (gg - c.G8()) * a / 255, c.B8() + (b - c.B8()) * a / 255));
   }
 }
 
+// ต่อข้อความไทย/ตัวเลขเป็นแถวเดียว
+struct Line {
+  int x, y;
+  void th(ThaiId id, uint32_t c, int gap = 4) { thai(id, x, y, c); x += thaiW(id) + gap; }
+  void num(const String& s, int px, uint32_t c, int gap = 4) { txt(s, x, y, px, c, middle_left); x += txtW(s, px) + gap; }
+};
+
 void drawRadar() {
-  beginFrame(BG_RADAR);
-  headerClock();
-  const RadarData* d = Radar::get();
-  bool here = d && d->valid && S && Radar::usableAt(S->lat, S->lon);
-  if (!here || !ensureRadarFrames(d)) {
-    thai(d && d->valid ? TH_R_OUTSIDE : TH_R_NODATA, MAP_CX, MAP_CY, C_MUTED, 1);
+  const RadarInfo& r = radarNow();
+  if (!canvas || !r.ready) {
+    beginFrame(BG_PLAIN);
+    headerClock();
+    thai(r.covered ? TH_R_NODATA : TH_R_NOCOV, 160, 120, C_MUTED, 1);
+    if (r.error.length()) txt(r.error, 160, 150, 9, C_MUTED, middle_center);
     endFrame();
     return;
   }
+  g = canvas;
   unsigned long now = millis();
-  // ภาพเคลื่อนไหว 4 เฟรม (เฟรมล่าสุดค้างนานกว่า)
-  int phase = (now / 650) % 6;
-  int fi = phase >= 3 ? 3 : phase;
-  rframes[fi]->pushSprite(g, MAP_X, MAP_Y);
-  // วงรัศมี 10/20/30 กม.
-  float ppk = 1.0f / d->kmPerPx;
-  for (int k = 1; k <= 3; k++) {
-    int r = (int)(k * 10 * ppk);
-    g->drawCircle(MAP_CX, MAP_CY, r, RGB(70, 120, 150));
-    txt(String(k * 10), MAP_CX + (int)(r * 0.707f) + 2, MAP_CY - (int)(r * 0.707f) - 2, 9, RGB(140, 190, 220), bottom_left);
+  // เล่นภาพย้อนหลังทีละเฟรม (0.5 วินาที) แล้วค้างภาพล่าสุด 2 วินาที
+  int n = r.frames, cycle = (n - 1) * 500 + 2000;
+  int t = now % cycle;
+  int fi = min(n - 1, t / 500);
+  Radar::drawFrame(fi, canvas);
+  const int cx = 160, cy = 120;
+  // วงรัศมี 10 / 25 / 50 กม.
+  for (int km : {10, 25, 50}) {
+    int rr = (int)(km / r.kmPerPx);
+    g->drawCircle(cx, cy, rr, RGB(80, 130, 160));
+    txt(String(km), cx + 2, cy - rr + 1, 9, RGB(170, 210, 235), top_left);
   }
-  g->drawFastHLine(MAP_CX - 98, MAP_CY, 196, RGB(40, 70, 90));
-  g->drawFastVLine(MAP_CX, MAP_CY - 98, 196, RGB(40, 70, 90));
-  // เส้นกวาดเรดาร์ + หางเรืองแสง
+  // เส้นกวาดเรดาร์
   float ang = (now % 4000) / 4000.0f * 6.2831853f;
-  for (int k = 14; k >= 0; k--) {
-    float a = ang - k * 0.035f;
-    blendLine(MAP_CX, MAP_CY, MAP_CX + 96 * sinf(a), MAP_CY - 96 * cosf(a), C_TEAL, (uint8_t)(170 - k * 11));
+  for (int k = 12; k >= 0; k--) {
+    float a = ang - k * 0.04f;
+    blendLine(cx, cy, cx + 118 * sinf(a), cy - 118 * cosf(a), C_TEAL, (uint8_t)(130 - k * 10));
   }
-  // ตำแหน่งเมือง (จุดเต้น)
+  // ตำแหน่งของเรา
   float pulse = (now % 1600) / 1600.0f;
-  g->drawCircle(MAP_CX, MAP_CY, 4 + (int)(pulse * 12), g->color888(255 * (1 - pulse), 214 * (1 - pulse), 120 * (1 - pulse)));
-  g->fillSmoothCircle(MAP_CX, MAP_CY, 4, C_GOLD);
-  g->fillSmoothCircle(MAP_CX, MAP_CY, 2, C_WHITE);
-  // ทิศเหนือ
-  txt("N", MAP_X + 7, MAP_Y + 24, 11, C_GOLD, top_left);
-  // แถบเวลาของเฟรม (ด้านบน — ด้านล่างเป็นเครดิตแผนที่)
-  g->fillRectAlpha(MAP_X, MAP_Y, MAP_W, 18, 150, 0);
-  for (int i = 0; i < 4; i++) {
-    int cx = MAP_X + 28 + i * 56, cy = MAP_Y + 9;
-    bool on = i == fi;
-    if (on) g->fillSmoothRoundRect(cx - 26, cy - 7, 52, 14, 7, RGB(0, 120, 160));
-    if (i == 3) thai(TH_R_NOW, cx, cy, on ? C_WHITE : C_MUTED, 1);
-    else txt(String("-") + (int)((d->frames[3] - d->frames[i]) / 60) + "m", cx, cy, 9, on ? C_WHITE : C_MUTED, middle_center);
+  g->drawCircle(cx, cy, 4 + (int)(pulse * 14), g->color888(255 * (1 - pulse), 214 * (1 - pulse), 120 * (1 - pulse)));
+  g->fillSmoothCircle(cx, cy, 5, C_GOLD);
+  g->fillSmoothCircle(cx, cy, 2, RGB(20, 20, 20));
+  // แถบบน: ชื่อ + เวลาเฟรม + เส้นเวลา + นาฬิกา
+  g->fillRectAlpha(0, 0, 320, 22, 160, 0);
+  thai(TH_R_TITLE, 8, 11, C_GOLD);
+  int tx = 8 + thaiW(TH_R_TITLE) + 6;
+  time_t ft = r.frameTime[fi];
+  struct tm lt;
+  localtime_r(&ft, &lt);
+  char hm[6];
+  snprintf(hm, sizeof(hm), "%02d:%02d", lt.tm_hour, lt.tm_min);
+  txt(hm, tx, 11, 11, fi == n - 1 ? C_WHITE : C_MUTED, middle_left);
+  tx += txtW(hm, 11) + 8;
+  for (int i = 0; i < n; i++) g->fillSmoothRoundRect(tx + i * 9, 8, 7, 6, 2, i == fi ? C_TEAL : RGB(70, 85, 110));
+  if (fi == n - 1) {
+    bool on = (now / 500) % 2;
+    g->fillSmoothCircle(tx + n * 9 + 6, 11, 3, on ? C_RED : RGB(120, 40, 50));
   }
-  // แผงสถานะด้านขวา
-  const int px = 275;
-  thai(TH_R_STATUS, px, 40, C_MUTED, 1);
-  bool fresh = time(nullptr) < 1700000000 || time(nullptr) - (time_t)d->generated < 45 * 60;
-  if (!fresh) {
-    thai(TH_R_NODATA, px, 90, C_MUTED, 1);
-  } else if (d->rainingHere) {
-    float bl = 0.5f + 0.5f * sinf(now / 300.0f);
-    g->fillSmoothRoundRect(244, 54, 62, 46, 10, g->color888(0, 60 + 60 * bl, 160 + 60 * bl));
-    thai(TH_R_HERE, px, 68, C_WHITE, 1);
-    thai(TH_R_HERE2, px, 88, C_WHITE, 1);
-  } else if (d->approaching && d->etaMin > 0) {
+  headerClock();
+  // เครดิต
+  txt("Esri | RainViewer", 316, 204, 9, RGB(150, 160, 180), bottom_right);
+  // แถบล่าง: สถานะฝน
+  g->fillRectAlpha(0, 208, 320, 32, 170, 0);
+  Line L{10, 224};
+  if (!r.covered) {
+    L.th(TH_R_NOCOV, C_MUTED);
+  } else if (r.hereMmh >= 0.2f) {
+    g->fillSmoothCircle(L.x + 4, L.y, 4, rateColor(r.hereMmh));
+    L.x += 12;
+    L.th(TH_R_HERE, C_WHITE, 8);
+    L.num(String(r.hereMmh, 1), 14, rateColor(r.hereMmh));
+    L.th(TH_R_MMH, C_MUTED, 8);
+    L.th(rateName(r.hereMmh), rateColor(r.hereMmh));
+  } else if (r.approaching && r.etaMin > 0 && !isnan(r.nearestKm)) {
     float bl = 0.5f + 0.5f * sinf(now / 250.0f);
-    g->fillSmoothRoundRect(244, 52, 62, 22, 8, g->color888(200 + 55 * bl, 90, 40));
-    thai(TH_R_COMING, px, 63, C_WHITE, 1);
-    thai(TH_R_ETA, px, 86, C_MUTED, 1);
-    txt(String(d->etaMin), px, 108, 24, C_GOLD, middle_center);
-    thai(TH_R_MIN, px, 128, C_MUTED, 1);
-    if (d->bearing >= 0) thai((ThaiId)(TH_DIR_0 + ((d->bearing + 22) % 360) / 45), px, 146, C_RAIN, 1);
-  } else if (!isnan(d->nearestKm) && d->nearestKm <= 40) {
-    thai(TH_R_NEAR, px, 64, C_RAIN, 1);
-    txt(String(d->nearestKm, 0), px - 6, 94, 24, C_WHITE, middle_center);
-    thai(TH_R_KM, px + 14 + txtW(String(d->nearestKm, 0), 24) / 2, 98, C_MUTED, 1);
-    if (d->bearing >= 0) thai((ThaiId)(TH_DIR_0 + ((d->bearing + 22) % 360) / 45), px, 124, C_RAIN, 1);
+    g->fillSmoothCircle(L.x + 4, L.y, 4, g->color888(255, 90 + 80 * bl, 40));
+    L.x += 12;
+    L.th(TH_T_RADAR_A, RGB(255, 225, 200));
+    L.num(String((int)roundf(r.nearestKm)), 14, C_WHITE, 3);
+    L.th(TH_R_KM, C_MUTED, 6);
+    if (r.bearing >= 0) L.th(dirName(r.bearing), C_RAIN, 8);
+    L.th(TH_R_ETA2, RGB(255, 225, 200), 2);
+    L.num(String(r.etaMin), 14, C_GOLD, 3);
+    L.th(TH_R_MIN, C_MUTED);
+  } else if (!isnan(r.nearestKm)) {
+    g->fillSmoothCircle(L.x + 4, L.y, 4, C_RAIN);
+    L.x += 12;
+    L.th(TH_R_NEAR, C_WHITE, 6);
+    L.num(String((int)roundf(r.nearestKm)), 14, C_WHITE, 3);
+    L.th(TH_R_KM, C_MUTED, 8);
+    if (r.bearing >= 0) L.th(dirName(r.bearing), C_RAIN);
   } else {
-    thai(TH_R_NONE, px, 70, C_GREEN, 1);
-    thai(TH_R_NONE2, px, 92, C_MUTED, 1);
+    g->fillSmoothCircle(L.x + 4, L.y, 4, C_GREEN);
+    L.x += 12;
+    L.th(TH_R_NONE, C_GREEN, 6);
+    L.th(TH_R_NONE2, C_WHITE);
   }
-  thai(d->model ? TH_R_MODEL : TH_R_RADAR, px, 162, C_MUTED, 1);
+  endFrame();
+}
+
+// ---------------- หน้า 4: ฝนใน 2 ชั่วโมง ----------------
+void drawRain() {
+  beginFrame(BG_RAIN);
+  headerClock();
+  if (!Wx || !Wx->valid) {
+    thai(TH_NO_DATA, 160, 120, C_MUTED, 1);
+    endFrame();
+    return;
+  }
+  const Weather& w = *Wx;
+  const RadarInfo& rr = radarNow();
+  const RadarInfo* rd = radarFresh(rr) ? &rr : nullptr;
+  float total = 0, peak = 0;
+  for (int i = 0; i < w.mCount; i++) { total += w.mPrecip[i]; peak = max(peak, w.mPrecip[i] * 4); }
+  int start = modelRainStart();
+  bool rainingNow = (rd && rd->hereMmh >= 0.2f) || (!rd && start == 0);
+  int eta = start;
+  bool fromRadar = false;
+  if (!rainingNow && rd && rd->approaching && rd->etaMin > 0 && (eta < 0 || rd->etaMin < eta)) { eta = rd->etaMin; fromRadar = true; }
+  // บรรทัดหลัก
+  if (rainingNow) {
+    float bl = 0.5f + 0.5f * sinf(millis() / 300.0f);
+    g->fillSmoothCircle(26, 46, 6, g->color888(0, 120 + 80 * bl, 255));
+    thai(TH_RN_NOW, 38, 46, C_WHITE);
+    // คาดว่าหยุดเมื่อไหร่ (ช่วงแรกที่ไม่มีฝนหลังจากนี้)
+    for (int i = 0; i < w.mCount; i++)
+      if (minutesUntil(w.mMinute[i]) > 0 && w.mPrecip[i] < 0.1f) {
+        int x = 300 - txtW(hh(0), 11);
+        char b[6];
+        snprintf(b, sizeof(b), "%02d:%02d", w.mMinute[i] / 60, w.mMinute[i] % 60);
+        txt(b, 300, 46, 11, C_GOLD, middle_right);
+        thai(TH_RN_STOP, x - 6, 46, C_MUTED, 2);
+        break;
+      }
+  } else if (eta > 0) {
+    g->fillSmoothCircle(26, 46, 6, fromRadar ? C_FEEL : C_RAIN);
+    thai(TH_RN_START, 38, 46, C_WHITE);
+    int x = 38 + thaiW(TH_RN_START) + 8;
+    txt(String(eta), x, 46, 24, C_GOLD, middle_left);
+    x += txtW(String(eta), 24) + 6;
+    thai(TH_R_MIN, x, 48, C_MUTED);
+    if (fromRadar) thai(TH_RN_RADAR, 300, 46, C_FEEL, 2);
+  } else {
+    g->fillSmoothCircle(26, 46, 6, C_GREEN);
+    thai(TH_RN_NONE, 38, 46, C_GREEN);
+  }
+  // บรรทัดสอง: ปริมาณรวม + ระดับ + เรดาร์ตอนนี้
+  Line L{20, 70};
+  L.th(TH_RN_TOTAL, C_MUTED, 6);
+  L.num(String(total, 1), 18, total >= 0.1f ? C_RAIN : C_WHITE, 4);
+  L.th(TH_RN_MM, C_MUTED, 10);
+  if (peak >= 0.4f) {
+    ThaiId lv = rateName(peak);
+    int cw = thaiW(lv) + 14;
+    g->fillSmoothRoundRect(L.x, 61, cw, 18, 9, rateColor(peak));
+    thai(lv, L.x + cw / 2, 70, RGB(10, 20, 40), 1);
+  } else {
+    L.th(TH_RN_DRY, C_GREEN);
+  }
+  if (rd) {
+    String v = String(rd->hereMmh, 1);
+    txt(v, 300, 70, 11, rd->hereMmh >= 0.2f ? rateColor(rd->hereMmh) : C_WHITE, middle_right);
+    thai(TH_RN_RADAR, 300 - txtW(v, 11) - 6, 70, C_MUTED, 2);
+  }
+  // กราฟทุก 15 นาที
+  thai(TH_RN_SRC, 302, 99, RGB(150, 160, 190), 2);
+  if (w.mCount > 0) {
+    float scale = max(1.0f, peak / 4);
+    const int base = 148, maxH = 28, step = 276 / 8;
+    for (int i = 0; i < w.mCount; i++) {
+      int x = 22 + i * step + step / 2;
+      float v = w.mPrecip[i];
+      int h = (int)(v / scale * maxH);
+      g->fillSmoothRoundRect(x - 11, base - maxH, 22, maxH, 4, RGB(30, 40, 70));
+      if (h > 0) g->fillSmoothRoundRect(x - 11, base - max(h, 3), 22, max(h, 3), 4, rateColor(v * 4));
+      if (v >= 0.05f) txt(String(v, 1), x, base - max(h, 3) - 2, 9, C_WHITE, bottom_center);
+      char b[6];
+      snprintf(b, sizeof(b), "%02d:%02d", w.mMinute[i] / 60, w.mMinute[i] % 60);
+      txt(b, x, base + 3, 9, i == 0 ? C_GOLD : C_MUTED, top_center);
+    }
+  }
+  // 12 ชั่วโมง
+  float hmax = 1;
+  int hn = min(w.hCount, 12);
+  for (int i = 0; i < hn; i++) if (!isnan(w.hPrecip[i])) hmax = max(hmax, w.hPrecip[i]);
+  const int hb = 216, hH = 16, hs = 276 / 12;
+  for (int i = 0; i < hn; i++) {
+    int x = 22 + i * hs + hs / 2;
+    float v = isnan(w.hPrecip[i]) ? 0 : w.hPrecip[i];
+    int h = (int)(v / hmax * hH);
+    g->fillRect(x - 7, hb - hH, 14, hH, RGB(28, 34, 60));
+    if (h > 0) g->fillRect(x - 7, hb - max(h, 2), 14, max(h, 2), rateColor(v));
+    if (v >= 0.1f) txt(String(v, v >= 10 ? 0 : 1), x, hb - max(h, 2) - 1, 9, C_WHITE, bottom_center);
+    if (i % 3 == 0) txt(hh(w.hHour[i]), x, hb + 2, 9, C_MUTED, top_center);
+  }
+  endFrame();
+}
+
+// ---------------- หน้า 7: คุณภาพอากาศ ----------------
+uint32_t aqiColor(int v) {
+  return v <= 50 ? RGB(130, 240, 160) : v <= 100 ? RGB(250, 220, 90) : v <= 150 ? RGB(255, 150, 80) : v <= 200 ? RGB(255, 90, 110) : RGB(200, 110, 255);
+}
+void drawAir() {
+  beginFrame(BG_AIR);
+  headerClock();
+  if (!A || !A->valid) {
+    thai(TH_NO_DATA, 160, 120, C_MUTED, 1);
+    endFrame();
+    return;
+  }
+  const AirQuality& a = *A;
+  uint32_t pc = pmColor(a.pm25);
+  txt(f0(a.pm25), 88, 82, 24, pc, middle_center);
+  // วงแหวนระดับรอบตัวเลข
+  g->fillArc(88, 82, 34, 37, 135, 135 + 270 * constrain(a.pm25 / 100.0f, 0.02f, 1.0f), pc);
+  g->drawArc(88, 82, 34, 37, 135 + 270 * constrain(a.pm25 / 100.0f, 0.02f, 1.0f), 405, RGB(50, 60, 90));
+  int lv = WeatherApi::pm25Level(a.pm25);
+  if (lv >= 0) {
+    ThaiId id = (ThaiId)(TH_AQS_0 + lv);
+    int cw = thaiW(id) + 16;
+    g->fillSmoothRoundRect(88 - cw / 2, 120, cw, 16, 8, pc);
+    thai(id, 88, 128, RGB(10, 20, 30), 1);
+  }
+  txt(f0(a.pm10), 300, 66, 18, isnan(a.pm10) ? C_MUTED : pmColor(a.pm10 / 2), middle_right);
+  txt(a.usAqi < 0 ? String("-") : String(a.usAqi), 300, 124, 18, a.usAqi < 0 ? C_MUTED : aqiColor(a.usAqi), middle_right);
+  // กราฟ 12 ชั่วโมง
+  float mx = 50;
+  for (int i = 0; i < a.hPmCount; i++) mx = max(mx, a.hPm[i]);
+  const int base = 212, H = 40, step = 276 / 12;
+  for (int i = 0; i < a.hPmCount; i++) {
+    int x = 22 + i * step + step / 2;
+    int h = max(2, (int)(a.hPm[i] / mx * H));
+    g->fillSmoothRoundRect(x - 7, base - h, 14, h, 3, pmColor(a.hPm[i]));
+    txt(f0(a.hPm[i]), x, base - h - 1, 9, C_WHITE, bottom_center);
+    if (i % 3 == 0) txt(hh(a.hPmHour[i]), x, base + 3, 9, C_MUTED, top_center);
+  }
+  endFrame();
+}
+
+// ---------------- หน้า 8: ทองคำ · หุ้น ----------------
+String thousands(float v, int dec = 0) {
+  if (isnan(v)) return "-";
+  String s = String(fabsf(v), dec);
+  int dot = s.indexOf('.');
+  int end = dot < 0 ? s.length() : dot;
+  for (int i = end - 3; i > 0; i -= 3) s = s.substring(0, i) + "," + s.substring(i);
+  return v < 0 ? "-" + s : s;
+}
+String signedStr(float v, int dec) { return isnan(v) ? String("-") : (v >= 0 ? "+" : "") + String(v, dec); }
+void drawMarket() {
+  beginFrame(BG_MARKET);
+  headerClock();
+  if (!M || !M->valid) {
+    thai(TH_MK_NODATA, 160, 120, C_MUTED, 1);
+    endFrame();
+    return;
+  }
+  const Market& m = *M;
+  if (m.goldValid) {
+    txt(thousands(m.barBuy), 300, 64, 18, C_WHITE, middle_right);
+    txt(thousands(m.barSell), 300, 90, 18, C_GOLD, middle_right);
+    txt(thousands(m.ornSell), 300, 110, 11, C_WHITE, middle_right);
+    if (!isnan(m.goldChange)) {
+      String c = signedStr(m.goldChange, 0);
+      uint32_t col = m.goldChange > 0 ? C_GREEN : m.goldChange < 0 ? C_RED : C_MUTED;
+      int cw = txtW(c, 11) + 14;
+      g->fillSmoothRoundRect(300 - cw, 33, cw, 16, 8, RGB(30, 36, 60));
+      txt(c, 300 - cw / 2, 41, 11, col, middle_center);
+    }
+    if (m.goldTime.length()) txt(m.goldTime, 120, 41, 9, C_MUTED, middle_left);
+    if (m.goldEstimate) thai(TH_MK_EST, 160, 41, C_MUTED);
+  }
+  if (m.setValid) {
+    uint32_t col = m.setChange > 0 ? C_GREEN : m.setChange < 0 ? C_RED : C_WHITE;
+    txt(String(m.setPrice, 2), 20, 162, 24, C_WHITE, middle_left);
+    txt(signedStr(m.setChange, 2) + " (" + signedStr(m.setPct, 2) + "%)", 20, 186, 11, col, middle_left);
+    bool open = m.setState == "open";
+    ThaiId st = open ? TH_MK_OPEN : TH_MK_CLOSED;
+    int cw = thaiW(st) + 12;
+    g->fillSmoothRoundRect(300 - cw, 130, cw, 15, 7, open ? RGB(30, 150, 90) : RGB(70, 76, 100));
+    thai(st, 300 - cw / 2, 137, C_WHITE, 1);
+    // กราฟเส้นวันนี้
+    if (m.sparkCount >= 2) {
+      float lo = m.spark[0], hi = m.spark[0];
+      for (int i = 0; i < m.sparkCount; i++) { lo = min(lo, m.spark[i]); hi = max(hi, m.spark[i]); }
+      if (!isnan(m.setPrev)) { lo = min(lo, m.setPrev); hi = max(hi, m.setPrev); }
+      if (hi - lo < 0.5f) { hi += 0.25f; lo -= 0.25f; }
+      const int x0 = 164, x1 = 300, y0 = 152, y1 = 196;
+      auto Y = [&](float v) { return y1 - (v - lo) / (hi - lo) * (y1 - y0); };
+      if (!isnan(m.setPrev))
+        for (int x = x0; x < x1; x += 6) g->drawFastHLine(x, (int)Y(m.setPrev), 3, RGB(120, 130, 160));
+      for (int i = 0; i < m.sparkCount; i++) {
+        int x = x0 + i * (x1 - x0) / (m.sparkCount - 1);
+        int y = (int)Y(m.spark[i]);
+        g->drawFastVLine(x, y, y1 - y, (col & 0xFCFCFC) >> 2);
+        if (i) g->drawWideLine(x0 + (i - 1) * (x1 - x0) / (m.sparkCount - 1), Y(m.spark[i - 1]), x, y, 1.2f, col);
+      }
+    }
+    txt(String(m.set50Price, 2), 100, 206, 11, C_WHITE, middle_left);
+    txt(signedStr(m.set50Pct, 2) + "%", 170, 206, 11, m.set50Change >= 0 ? C_GREEN : C_RED, middle_left);
+  }
+  if (!isnan(m.usdthb)) txt(String(m.usdthb, 2), 100, 222, 11, C_WHITE, middle_left);
+  endFrame();
+}
+
+// ---------------- หน้า 9: ดวงอาทิตย์ · ดวงจันทร์ ----------------
+int hmToMin(const String& s) { return s.length() >= 5 ? s.substring(0, 2).toInt() * 60 + s.substring(3, 5).toInt() : -1; }
+void drawSky() {
+  beginFrame(BG_SKY);
+  headerClock();
+  const int cx = 160, cy = 150, rx = 130, ry = 106;
+  int rise = Wx ? hmToMin(Wx->sunrise) : -1, set = Wx ? hmToMin(Wx->sunset) : -1, nm = nowMinute();
+  if (rise >= 0 && set > rise) {
+    txt(Wx->sunrise, 30, 161, 11, C_GOLD, middle_center);
+    txt(Wx->sunset, 290, 161, 11, C_VIOLET, middle_center);
+    int len = set - rise;
+    // ความยาวกลางวัน (กึ่งกลางใต้เส้นโค้ง)
+    String hS = String(len / 60), mS = String(len % 60);
+    int wsum = thaiW(TH_SKY_DAY) + 6 + txtW(hS, 14) + 4 + thaiW(TH_SKY_HR) + 6 + txtW(mS, 14) + 4 + thaiW(TH_SKY_MIN);
+    Line L{cx - wsum / 2, 132};
+    L.th(TH_SKY_DAY, C_MUTED, 6);
+    L.num(hS, 14, C_WHITE);
+    L.th(TH_SKY_HR, C_MUTED, 6);
+    L.num(mS, 14, C_WHITE);
+    L.th(TH_SKY_MIN, C_MUTED);
+    if (nm >= rise && nm <= set) {
+      float f = (float)(nm - rise) / len;
+      // เส้นทางที่ผ่านมาแล้ว
+      for (float k = 0; k <= f; k += 0.01f) {
+        float th = PI + k * PI;
+        g->fillSmoothCircle(cx + rx * cosf(th), cy + ry * sinf(th), 1.6f, C_GOLD);
+      }
+      float th = PI + f * PI;
+      int sx = cx + rx * cosf(th), sy = cy + ry * sinf(th);
+      float pl = 0.5f + 0.5f * sinf(millis() / 400.0f);
+      g->fillSmoothCircle(sx, sy, 13 + 2 * pl, RGB(120, 70, 20));
+      g->fillSmoothCircle(sx, sy, 10, RGB(255, 170, 40));
+      g->fillSmoothCircle(sx, sy, 7, RGB(255, 236, 160));
+    } else {
+      thai(TH_SKY_NIGHT, cx, 100, C_VIOLET, 1);
+    }
+  }
+  // ดวงจันทร์: อายุดวงจันทร์จากเดือนดับอ้างอิง 6 ม.ค. 2000 18:14 UTC
+  time_t now = time(nullptr);
+  if (now > 1700000000) {
+    const double syn = 29.530588853;
+    double days = (now - 947182440) / 86400.0;
+    double p = fmod(days, syn) / syn;
+    if (p < 0) p += 1;
+    const int mx = 44, my = 201, mr = 22;
+    g->fillSmoothCircle(mx, my, mr + 3, RGB(40, 40, 70));
+    g->fillSmoothCircle(mx, my, mr, RGB(48, 52, 72));
+    double c = cos(2 * PI * p);
+    for (int y = -mr; y <= mr; y++) {
+      float w = sqrtf((float)(mr * mr - y * y));
+      float a0, a1;
+      if (p < 0.5) { a0 = w * c; a1 = w; }
+      else { a0 = -w; a1 = -w * c; }
+      if (a1 > a0) g->drawFastHLine(mx + (int)roundf(a0), my + y, (int)roundf(a1 - a0), RGB(245, 238, 210));
+    }
+    int ph = (int)floor(p * 8 + 0.5) % 8;
+    thai((ThaiId)(TH_MOON_0 + ph), 80, 188, C_WHITE);
+    int lit = (int)lround((1 - c) / 2 * 100);
+    Line L{80, 214};
+    L.th(TH_SKY_LIT, C_MUTED, 4);
+    L.num(String(lit) + "%", 11, C_GOLD, 14);
+    double toFull = fmod(0.5 - p + 1, 1) * syn, toNew = (1 - p) * syn;
+    bool full = toFull <= toNew;
+    L.th(full ? TH_SKY_FULL : TH_SKY_NEW, C_MUTED, 4);
+    L.num(String((int)lround(full ? toFull : toNew)), 11, C_WHITE, 4);
+    L.th(TH_SKY_DAYS, C_MUTED);
+  }
   endFrame();
 }
 
@@ -814,9 +1144,8 @@ void drawNow() {
   }
   const Weather& w = *Wx;
   icon(ICONS_L, iconFor(w.weatherCode, w.isDay), 12, 26);
-  String t = f0(w.temp) + "°";
-  int x = drawGlyphs(GOLD_GLYPHS, t.c_str(), 138, 24);
-  txt("C", x + 2, 40, 18, C_WHITE);
+  int x = drawGlyphsScaled(CLOCK_GLYPHS, f0(w.temp).c_str(), 138, 26, 0.74f);
+  txt("°C", x + 2, 40, 18, C_WHITE);
   ThaiId d = descFor(w.weatherCode);
   thai(d, 140, 94, RGB(225, 230, 240));
   thai(TH_FEELS, 140, 110, C_MUTED);
@@ -908,8 +1237,12 @@ void render() {
   if (page == PAGE_HOME) drawHome();
   else if (page == PAGE_SUM) drawSummary();
   else if (page == PAGE_RADAR) drawRadar();
+  else if (page == PAGE_RAIN) drawRain();
   else if (page == PAGE_NOW) drawNow();
-  else drawForecast();
+  else if (page == PAGE_FC) drawForecast();
+  else if (page == PAGE_AIR) drawAir();
+  else if (page == PAGE_MARKET) drawMarket();
+  else drawSky();
 }
 
 void message(ThaiId id, const String& sub, uint32_t subCol) {
@@ -1482,8 +1815,9 @@ void showUpdating() {
   if (screen == SCR_WEATHER) render();
 }
 
-void showWeather(const Settings& s, const Weather& w, const AirQuality& a, const Market&) {
+void showWeather(const Settings& s, const Weather& w, const AirQuality& a, const Market& m) {
   S = &s;
+  M = &m;
   Wx = &w;
   A = &a;
   updating = false;
@@ -1514,7 +1848,7 @@ void showDisplayMode(uint8_t mode) {
 Touch loop() {
   // หน้านาฬิกาอัปเดต 5 ครั้ง/วินาที (แถบวินาทีลื่น) หน้าอื่นทุก 1 วินาที
   unsigned long now = millis();
-  unsigned long interval = page == PAGE_HOME ? 200 : page == PAGE_RADAR ? 90 : 1000;
+  unsigned long interval = page == PAGE_HOME ? 200 : page == PAGE_RADAR ? 100 : 1000;
   if (screen == SCR_WEATHER && now - lastFrame >= interval) {
     lastFrame = now;
     render();

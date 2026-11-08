@@ -75,6 +75,8 @@ static const char PAGE_DASHBOARD[] PROGMEM = R"HTML(<!doctype html><html lang="t
 <div class="card">
   <div class="muted" id="updated">-</div>
   <button class="sec" onclick="refreshNow()">🔄 อัปเดตเดี๋ยวนี้</button>
+  <p><a id="gps" href="#" style="display:block;text-align:center;padding:12px;border-radius:10px;background:#1f6feb;color:#fff;text-decoration:none">📍 ใช้ตำแหน่ง GPS ของมือถือ (แม่นที่สุด)</a></p>
+  <script>document.getElementById('gps').href='https://wssnuk.github.io/esp32-weather/loc.html?dev='+location.host;</script>
   <form method="post" action="/city"><label>เปลี่ยนเมือง</label>
   <input name="city" placeholder="เช่น Chiang Mai, ภูเก็ต" required><button>เปลี่ยนเมือง</button></form>
   <div class="muted" id="dev"></div>

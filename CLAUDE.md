@@ -46,8 +46,13 @@ reply in Thai and keep user-facing strings (Serial, web UI) in Thai.
   long-press 5 s or serial `preset` re-runs it (then a 2nd step picks the "vivid" level).
 - Vivid (1.3.1+): 64K-entry RGB565 LUT in PSRAM (saturation + gamma) applied to the canvas in endFrame (saturation, contrast, gamma>1 = deeper image; user asked for "เข้ม");
   levels 0-3, Preferences "s3ui" key "vivid", serial `vivid N`. Default VIVID_DEFAULT=2. Rotation is only changed via serial `display`.
-- Radar page: radar.cpp downloads radar.json + f0..f3.jpg (224x204) from the market-data branch in a FreeRTOS task
-  (double-buffered). Map is centred on Bangkok (server/radar.py); page shows a coverage note for cities > 25 km away.
+- Board is LCDwiki/QDtech ES3C28P (ILI9341V IPS, FT6336G, ES8311, WS2812 IO42, SD SDIO). Outline 50x86x10.6 mm,
+  holes 4x Ø3.2 on a 42x78 mm grid (4 mm from edges). 3D-print case: s3/case/.
+- Pages (1.4.0+): home, summary, full-screen radar, rain 2 h, now, forecast, air quality, gold/SET, sun/moon.
+- Radar (1.4.0+) is built ON THE DEVICE (radar.cpp task): RainViewer free API (max zoom 7 → 512 px tiles = z8 scale,
+  colour scheme forced to Universal Blue; coverage tile alpha 0 = covered) over Esri World Dark Gray z8 + labels,
+  centred on settings lat/lon. Rain rate from palette → dBZ → Marshall-Palmer mm/h. GitHub Actions only does market.json.
+- Exact location: docs/loc.html (phone GPS, https) links to http://<board>/loc?lat&lon&name.
 - Sound: sound.cpp, ES8311 codec at I2C 0x18 on the touch bus (lgfx i2c port 1), I2S MCLK4 BCLK5 WS7, DOUT 6 or 8,
   PA enable GPIO1 (level tested). One-time tap test picks the config (Preferences "s3snd"). Chimes are synthesized
   original tones only — never bundle copyrighted music.

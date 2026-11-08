@@ -173,6 +173,15 @@ void handleCity() {
   sendMessage(ok ? "เปลี่ยนเมืองแล้ว ✅" : "ไม่สำเร็จ", msg);
 }
 
+// ตั้งพิกัดจริงจากหน้า GPS (https://wssnuk.github.io/esp32-weather/loc.html)
+void handleLoc() {
+  String msg;
+  double lat = server.hasArg("lat") ? server.arg("lat").toDouble() : NAN;
+  double lon = server.hasArg("lon") ? server.arg("lon").toDouble() : NAN;
+  bool ok = setExactLocation(lat, lon, server.arg("name"), msg);
+  sendMessage(ok ? "ตั้งตำแหน่งแล้ว ✅" : "ไม่สำเร็จ", msg);
+}
+
 void handleWifiReset() {
   sendMessage("กำลังเข้าโหมดตั้งค่า",
               "ให้เชื่อมต่อ Wi-Fi ชื่อ \"" SETUP_AP_SSID "\" จากโทรศัพท์ แล้วตั้งค่าใหม่", "");
@@ -201,6 +210,7 @@ void beginDashboard() {
   server.on("/api/weather", handleApi);
   server.on("/refresh", HTTP_POST, handleRefresh);
   server.on("/city", HTTP_POST, handleCity);
+  server.on("/loc", handleLoc);
   server.on("/wifi-reset", handleWifiReset);
   server.onNotFound([]() { server.send(404, "text/plain", "Not found"); });
   server.begin();
