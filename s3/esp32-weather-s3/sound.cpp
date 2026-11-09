@@ -92,19 +92,21 @@ bool useCfg(int idx) {
 
 // ----- สังเคราะห์เสียงระฆัง (เมโลดี้แต่งเอง) -----
 struct Note { uint16_t hz, at, dur; };  // ms
-struct Mel { const Note* n; uint8_t count; uint16_t total; };
+struct Mel { const Note* n; uint8_t count; uint16_t total; float gain; };
 const Note N_TEST[] = {{1047, 0, 500}, {1568, 180, 700}};
 const Note N_BOOT[] = {{523, 0, 500}, {659, 110, 500}, {784, 220, 500}, {1047, 330, 1100}};
 const Note N_RAIN[] = {{880, 0, 260}, {659, 170, 260}, {880, 340, 260}, {659, 510, 260},
                        {880, 900, 260}, {659, 1070, 260}, {440, 1240, 900}};
 const Note N_HOUR[] = {{784, 0, 1200}, {659, 420, 1200}, {523, 840, 1600}};
 const Note N_OK[] = {{784, 0, 300}, {1047, 120, 700}};
-const Mel MELS[] = {{N_TEST, 2, 900}, {N_BOOT, 4, 1450}, {N_RAIN, 7, 2150}, {N_HOUR, 3, 2450}, {N_OK, 2, 850}};
+const Note N_TICK[] = {{1760, 0, 45}};
+const Mel MELS[] = {{N_TEST, 2, 900, 1}, {N_BOOT, 4, 1450, 1}, {N_RAIN, 7, 2150, 1}, {N_HOUR, 3, 2450, 1}, {N_OK, 2, 850, 1},
+                    {N_TICK, 1, 70, 0.45f}};
 
 void render(const Mel& m) {
   static int16_t buf[256 * 2];
   const int totalSamples = (int)m.total * RATE / 1000;
-  const float amp = 9000.0f;
+  const float amp = 13000.0f * m.gain;
   for (int s0 = 0; s0 < totalSamples; s0 += 256) {
     int n = min(256, totalSamples - s0);
     for (int k = 0; k < n; k++) {
@@ -116,7 +118,7 @@ void render(const Mel& m) {
         int t = s - st;
         if (t < 0 || t >= len) continue;
         float tt = (float)t / RATE;
-        float env = expf(-tt * 5.0f) * min(1.0f, t / 48.0f) * min(1.0f, (len - t) / 400.0f);
+        float env = expf(-tt * 5.0f) * min(1.0f, t / 48.0f) * min(1.0f, (len - t) / (float)min(400, len / 2 + 1));
         float ph = 6.2831853f * no.hz * tt;
         v += env * (sinf(ph) + 0.35f * sinf(2 * ph) + 0.12f * sinf(3.01f * ph));
       }
@@ -166,11 +168,13 @@ bool begin() {
   prefs.end();
   queue = xQueueCreate(4, 1);
   xTaskCreatePinnedToCore(task, "sound", 6144, nullptr, 2, nullptr, 0);
-  if (saved >= 0 && saved < CFG_COUNT) useCfg(saved);
+  // ขาเสียงตามเอกสารบอร์ด ES3C28P (DOUT IO6, เปิดแอมป์ IO1 = LOW) — ใช้เป็นค่าเริ่มต้น ไม่ต้องทดสอบ
+  useCfg(saved >= 0 && saved < CFG_COUNT ? saved : 0);
+  Serial.println("[Sound] " + Sound::status());
   return true;
 }
 
-bool needsTest() { return codec && cfgIdx < 0 && tries < 3 && Display::hasTouch(); }
+bool needsTest() { return false; }  // ใช้ขาตามเอกสารบอร์ดแล้ว (ทดสอบเองได้ด้วยคำสั่ง sound)
 bool ready() { return codec && cfgIdx >= 0 && i2sOn; }
 
 void play(Melody m) {

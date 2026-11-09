@@ -28,7 +28,20 @@ struct RadarInfo {
   String error;
 };
 
+// ภาพแผนที่ที่ GitHub Actions สร้าง: 0 = เรดาร์ฝนทั้งประเทศ, 1 = ดาวเทียมพายุ (Himawari) + พายุหมุนเขตร้อน
+struct MapInfo {
+  bool ok = false;
+  int frames = 0;
+  uint32_t ts[4] = {};
+  int z = 5;
+  double x0 = 0, y0 = 0, scale = 1;  // พิกัดโลกของมุมซ้ายบน (ที่ zoom z) และอัตราย่อ → ใช้ปักหมุดตำแหน่งบอร์ด
+};
+struct StormInfo { char name[20]; float lat, lon; int wind; };
+
 namespace Radar {
+MapInfo mapInfo(int which);
+bool drawMap(int which, int frame, lgfx::LovyanGFX* dst);
+int storms(StormInfo* out, int maxN);
 void begin();
 bool started();                             // เริ่ม task แล้วหรือยัง (โหมดปลอดภัยจะยังไม่เริ่ม)
 void setLocation(double lat, double lon);   // เปลี่ยนตำแหน่ง → โหลดแผนที่ใหม่

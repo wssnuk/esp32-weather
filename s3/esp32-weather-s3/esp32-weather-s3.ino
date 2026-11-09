@@ -507,6 +507,7 @@ void loop() {
     autoLocation(false);
     Radar::setLocation(settings.lat, settings.lon);
     Radar::begin();
+    if (!Sound::ready() && Sound::begin()) Sound::play(Sound::MEL_OK);
   }
   Web::loop();
   handleSerial();
@@ -553,7 +554,10 @@ void loop() {
     return;
   }
 
-  if (touch == Display::Touch::Tap) Display::nextPage();
+  if (touch == Display::Touch::Tap) {
+    Display::nextPage();
+    Sound::play(Sound::MEL_TICK);  // เสียงคลิกเบา ๆ ยืนยันการแตะ
+  }
   g_stage = ST_UPDATE;
   AutoUpdate::loop();
   g_stage = ST_LOOP;

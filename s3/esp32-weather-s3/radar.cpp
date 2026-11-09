@@ -339,11 +339,83 @@ void update() {
                 i.bearing, i.approaching ? ("กำลังเข้ามา ~" + String(i.etaMin) + " นาที").c_str() : "-");
 }
 
+// ---------- ภาพแผนที่สำเร็จรูป (เรดาร์ทั้งประเทศ / ดาวเทียมพายุ) ----------
+struct MapSet {
+  MapInfo info;
+  uint8_t* jpg[4] = {};
+  size_t len[4] = {};
+};
+MapSet maps[2];
+StormInfo stormList[8];
+int stormCount = 0;
+uint32_t mapsGenerated = 0;
+unsigned long mapsCheckedAt = 0;
+
+void updateMaps() {
+  size_t len;
+  if (fetch(MAPS_URL "meta.json?t=" + String(millis()), len) != 200) return;
+  JsonDocument doc;
+  if (deserializeJson(doc, (const char*)dl, len)) return;
+  uint32_t gen = doc["generated"] | 0;
+  if (gen == mapsGenerated) return;
+  const char* keys[2] = {"th", "storm"};
+  MapSet fresh[2];
+  for (int k = 0; k < 2; k++) {
+    JsonObjectConst m = doc[keys[k]];
+    if (m.isNull()) continue;
+    MapInfo& mi = fresh[k].info;
+    mi.z = m["z"] | 5;
+    mi.x0 = m["x0"] | 0.0;
+    mi.y0 = m["y0"] | 0.0;
+    mi.scale = m["scale"] | 1.0;
+    int n = 0;
+    for (JsonVariantConst v : m["frames"].as<JsonArrayConst>()) if (n < 4) mi.ts[n++] = v.as<uint32_t>();
+    for (int i = 0; i < n; i++) {
+      String url = String(MAPS_URL) + keys[k] + "/f" + i + ".jpg?g=" + gen;
+      if (fetch(url, len) != 200) break;
+      uint8_t* p = (uint8_t*)ps_malloc(len);
+      if (!p) break;
+      memcpy(p, dl, len);
+      fresh[k].jpg[i] = p;
+      fresh[k].len[i] = len;
+      mi.frames = i + 1;
+      vTaskDelay(1);
+    }
+    mi.ok = mi.frames > 0;
+  }
+  StormInfo sl[8];
+  int sc = 0;
+  for (JsonVariantConst s : doc["storms"].as<JsonArrayConst>()) {
+    if (sc >= 8) break;
+    strlcpy(sl[sc].name, s["name"] | "", sizeof(sl[sc].name));
+    sl[sc].lat = s["lat"] | 0.0f;
+    sl[sc].lon = s["lon"] | 0.0f;
+    sl[sc].wind = s["wind"] | 0;
+    sc++;
+  }
+  xSemaphoreTake(mtx, portMAX_DELAY);
+  for (int k = 0; k < 2; k++) {
+    if (!fresh[k].info.ok) { for (auto* p : fresh[k].jpg) free(p); continue; }  // ชุดใหม่ไม่ครบ: ใช้ชุดเดิมต่อ
+    for (auto* p : maps[k].jpg) free(p);
+    maps[k] = fresh[k];
+  }
+  memcpy(stormList, sl, sizeof(sl));
+  stormCount = sc;
+  mapsGenerated = gen;
+  xSemaphoreGive(mtx);
+  Serial.printf("[Maps] อัปเดตภาพเรดาร์ทั้งประเทศ %d ภาพ, ดาวเทียม %d ภาพ, พายุในภูมิภาค %d ลูก\n", maps[0].info.frames,
+                maps[1].info.frames, sc);
+}
+
 void task(void*) {
   tls.setInsecure();
   vTaskDelay(pdMS_TO_TICKS(6000));
   for (;;) {
     if (WiFi.status() == WL_CONNECTED && !isnan(wantLat)) update();
+    if (WiFi.status() == WL_CONNECTED && (!mapsCheckedAt || millis() - mapsCheckedAt > MAPS_UPDATE_MS)) {
+      mapsCheckedAt = millis();
+      updateMaps();
+    }
     for (int i = 0; i < (int)(RADAR_UPDATE_MS / 1000) && !locChanged; i++) vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
@@ -368,6 +440,32 @@ void setLocation(double lat, double lon) {
   wantLat = lat;
   wantLon = lon;
   locChanged = true;
+}
+
+MapInfo mapInfo(int which) {
+  if (!mtx || which < 0 || which > 1) return MapInfo();
+  xSemaphoreTake(mtx, portMAX_DELAY);
+  MapInfo m = maps[which].info;
+  xSemaphoreGive(mtx);
+  return m;
+}
+
+bool drawMap(int which, int frame, lgfx::LovyanGFX* dst) {
+  if (!mtx || which < 0 || which > 1) return false;
+  xSemaphoreTake(mtx, portMAX_DELAY);
+  bool ok = frame >= 0 && frame < maps[which].info.frames && maps[which].jpg[frame];
+  if (ok) dst->drawJpg(maps[which].jpg[frame], maps[which].len[frame], 0, 0);
+  xSemaphoreGive(mtx);
+  return ok;
+}
+
+int storms(StormInfo* out, int maxN) {
+  if (!mtx) return 0;
+  xSemaphoreTake(mtx, portMAX_DELAY);
+  int n = min(maxN, stormCount);
+  memcpy(out, stormList, n * sizeof(StormInfo));
+  xSemaphoreGive(mtx);
+  return n;
 }
 
 RadarInfo info() {

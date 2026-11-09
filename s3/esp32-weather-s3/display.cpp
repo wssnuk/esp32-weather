@@ -390,8 +390,8 @@ const Settings* S = nullptr;
 const Weather* Wx = nullptr;
 const AirQuality* A = nullptr;
 const Market* M = nullptr;
-constexpr int PAGE_COUNT = 9;
-enum { PAGE_HOME = 0, PAGE_SUM, PAGE_RADAR, PAGE_RAIN, PAGE_NOW, PAGE_FC, PAGE_AIR, PAGE_MARKET, PAGE_SKY };
+constexpr int PAGE_COUNT = 11;
+enum { PAGE_HOME = 0, PAGE_SUM, PAGE_RADAR, PAGE_THRADAR, PAGE_STORM, PAGE_RAIN, PAGE_NOW, PAGE_FC, PAGE_AIR, PAGE_MARKET, PAGE_SKY };
 void pageDots(int cx, int y) {
   for (int i = 0; i < PAGE_COUNT; i++) {
     int x = cx - (PAGE_COUNT - 1) * 4 + i * 8;
@@ -1008,6 +1008,112 @@ void drawRadar() {
   endFrame();
 }
 
+// ---------------- หน้า 4-5: เรดาร์ฝนทั้งประเทศ / ดาวเทียมพายุ ----------------
+double worldX(double lon, int z) { return (lon + 180.0) / 360.0 * 256.0 * (1 << z); }
+double worldY(double lat, int z) {
+  double sn = sin(lat * DEG_TO_RAD);
+  return (0.5 - log((1 + sn) / (1 - sn)) / (4 * PI)) * 256.0 * (1 << z);
+}
+float distKm(double la1, double lo1, double la2, double lo2) {
+  double dla = (la2 - la1) * DEG_TO_RAD, dlo = (lo2 - lo1) * DEG_TO_RAD;
+  double a = sin(dla / 2) * sin(dla / 2) + cos(la1 * DEG_TO_RAD) * cos(la2 * DEG_TO_RAD) * sin(dlo / 2) * sin(dlo / 2);
+  return 6371.0 * 2 * atan2(sqrt(a), sqrt(1 - a));
+}
+int bearingDeg(double la1, double lo1, double la2, double lo2) {
+  double y = sin((lo2 - lo1) * DEG_TO_RAD) * cos(la2 * DEG_TO_RAD);
+  double x = cos(la1 * DEG_TO_RAD) * sin(la2 * DEG_TO_RAD) - sin(la1 * DEG_TO_RAD) * cos(la2 * DEG_TO_RAD) * cos((lo2 - lo1) * DEG_TO_RAD);
+  return ((int)lround(atan2(y, x) * RAD_TO_DEG) + 360) % 360;
+}
+void drawMapPage(int which) {
+  MapInfo mi = Radar::mapInfo(which);
+  const char* title = which == 0 ? "ฝนทั่วไทย" : "พายุ · ดาวเทียม";
+  if (!canvas || !mi.ok) {
+    beginFrame(BG_PAGE);
+    headerBar(title);
+    tf(TF13B, Radar::started() ? "กำลังโหลดภาพ..." : "ปิดไว้ชั่วคราว (โหมดปลอดภัย)", 160, 120, C_MUTED, 1);
+    tf(TF10, "ภาพอัปเดตทุก 10 นาที", 160, 142, C_MUTED, 1);
+    endFrame();
+    return;
+  }
+  g = canvas;
+  unsigned long now = millis();
+  int n = mi.frames, cycle = (n - 1) * 700 + 2200;
+  int fi = min(n - 1, (int)(now % cycle) / 700);
+  Radar::drawMap(which, fi, canvas);
+  // หมุดตำแหน่งของบอร์ด
+  if (S && !isnan(S->lat)) {
+    int px = (worldX(S->lon, mi.z) - mi.x0) * mi.scale, py = (worldY(S->lat, mi.z) - mi.y0) * mi.scale;
+    if (px > 0 && px < 320 && py > 22 && py < 206) {
+      float pl = (now % 1600) / 1600.0f;
+      g->drawCircle(px, py, 4 + (int)(pl * 12), mix(C_GOLD, RGB(0, 0, 0), pl));
+      g->fillSmoothCircle(px, py, 4, C_GOLD);
+      g->fillSmoothCircle(px, py, 1.6f, RGB(30, 20, 0));
+    }
+  }
+  // แถบบน: ชื่อ + เวลาภาพ + เส้นเวลา + วันที่/เวลา
+  g->fillRectAlpha(0, 0, 320, 22, 165, 0);
+  int tx = 8 + tf(TF13B, title, 8, 16, C_GOLD) + 6;
+  time_t ft = mi.ts[fi];
+  struct tm lt;
+  localtime_r(&ft, &lt);
+  char hm[6];
+  snprintf(hm, sizeof(hm), "%02d:%02d", lt.tm_hour, lt.tm_min);
+  txt(hm, tx, 11, 11, fi == n - 1 ? C_WHITE : C_MUTED, middle_left);
+  tx += txtW(hm, 11) + 6;
+  for (int i = 0; i < n; i++) g->fillSmoothRoundRect(tx + i * 7, 8, 5, 6, 2, i == fi ? C_TEAL : RGB(70, 85, 110));
+  headerClock(false);
+  // แถบล่าง
+  g->fillRectAlpha(0, 206, 320, 34, 175, 0);
+  pageDots(160, 236);
+  if (which == 0) {
+    // คำอธิบายสีฝน
+    const uint32_t lc[] = {RGB(0x36, 0xba, 0xe5), RGB(0x00, 0x77, 0xaa), RGB(0xff, 0xc5, 0x00), RGB(0xf2, 0x36, 0x00), RGB(0xff, 0x6c, 0xff)};
+    const char* ln[] = {"เบา", "ปานกลาง", "หนัก", "หนักมาก", "รุนแรง"};
+    int x = 10;
+    for (int i = 0; i < 5; i++) {
+      g->fillSmoothRoundRect(x, 213, 12, 8, 2, lc[i]);
+      x += 15 + tf(TF10, ln[i], x + 15, 222, C_MUTED) + 8;
+    }
+    txt("RainViewer | Esri", 312, 198, 9, RGB(160, 170, 195), middle_right);
+  } else {
+    StormInfo st[8];
+    int sn = Radar::storms(st, 8);
+    int best = -1;
+    float bd = 1e9;
+    for (int i = 0; i < sn; i++) {
+      float d = S ? distKm(S->lat, S->lon, st[i].lat, st[i].lon) : 0;
+      if (d < bd) { bd = d; best = i; }
+    }
+    if (best < 0) {
+      g->fillSmoothCircle(14, 218, 4, C_GREEN);
+      tf(TF12, "ไม่มีพายุหมุนเขตร้อนในภูมิภาค", 22, 222, C_GREEN);
+    } else {
+      const StormInfo& s = st[best];
+      uint32_t c = s.wind >= 118 ? C_RED : s.wind >= 63 ? RGB(255, 170, 40) : RGB(255, 230, 90);
+      const char* cat = s.wind >= 118 ? "ไต้ฝุ่น" : s.wind >= 63 ? "พายุโซนร้อน" : "พายุดีเปรสชัน";
+      float bl = 0.5f + 0.5f * sinf(now / 250.0f);
+      g->fillSmoothCircle(14, 218, 4, mix(c, C_WHITE, bl * 0.4f));
+      String nm = String(s.name);
+      int dash = nm.indexOf('-');
+      if (dash > 0) nm = nm.substring(0, dash);
+      int x = 22 + tf(TF12, String(cat) + " " + nm, 22, 222, c) + 8;
+      x += tf(TF10, "ลม " + String(s.wind) + " กม./ชม.", x, 222, C_WHITE) + 8;
+      if (S && x < 230) {
+        static const char* const dn[] = {"ทิศเหนือ", "ทิศตะวันออกเฉียงเหนือ", "ทิศตะวันออก", "ทิศตะวันออกเฉียงใต้", "ทิศใต้", "ทิศตะวันตกเฉียงใต้", "ทิศตะวันตก", "ทิศตะวันตกเฉียงเหนือ"};
+        String far = "ห่าง " + String((int)lroundf(bd)) + " กม.";
+        x += tf(TF10, far, x, 222, C_MUTED) + 6;
+        if (x + tfW(TF10, dn[((bearingDeg(S->lat, S->lon, s.lat, s.lon) + 22) % 360) / 45]) < 314)
+          tf(TF10, dn[((bearingDeg(S->lat, S->lon, s.lat, s.lon) + 22) % 360) / 45], x, 222, C_MUTED);
+      }
+    }
+    // คำอธิบายสีเมฆ: สีสด = ยอดเมฆสูง/พายุฝนฟ้าคะนอง
+    const uint32_t ic[] = {RGB(150, 150, 160), RGB(0, 200, 255), RGB(0, 220, 80), RGB(255, 230, 0), RGB(255, 40, 30)};
+    for (int i = 0; i < 5; i++) g->fillRect(242 + i * 14, 197, 14, 5, ic[i]);
+    txt("NASA Himawari | GDACS", 312, 189, 9, RGB(160, 170, 195), middle_right);
+  }
+  endFrame();
+}
+
 // ---------------- หน้า 4: ฝนใน 2 ชั่วโมง ----------------
 void drawRain() {
   beginFrame(BG_PAGE);
@@ -1441,6 +1547,8 @@ void render() {
   if (page == PAGE_HOME) drawHome();
   else if (page == PAGE_SUM) drawSummary();
   else if (page == PAGE_RADAR) drawRadar();
+  else if (page == PAGE_THRADAR) drawMapPage(0);
+  else if (page == PAGE_STORM) drawMapPage(1);
   else if (page == PAGE_RAIN) drawRain();
   else if (page == PAGE_NOW) drawNow();
   else if (page == PAGE_FC) drawForecast();
@@ -2068,6 +2176,7 @@ Touch loop() {
   time_t sec = time(nullptr);
   bool due = page == PAGE_HOME ? now - lastFrame >= 200
            : page == PAGE_RADAR ? now - lastFrame >= 100
+           : (page == PAGE_THRADAR || page == PAGE_STORM) ? now - lastFrame >= 150
            : (sec != lastSec && now - lastFrame >= 120) || now - lastFrame >= 1000;
   if (screen == SCR_WEATHER && due) {
     lastFrame = now;

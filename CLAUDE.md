@@ -51,7 +51,7 @@ reply in Thai and keep user-facing strings (Serial, web UI) in Thai.
 - Pages (1.4.0+): home, summary, full-screen radar, rain 2 h, now, forecast, air quality, gold/SET, sun/moon.
 - Radar (1.4.0+) is built ON THE DEVICE (radar.cpp task): RainViewer free API (max zoom 7 → 512 px tiles = z8 scale,
   colour scheme forced to Universal Blue; coverage tile alpha 0 = covered) over Esri World Dark Gray z8 + labels,
-  centred on settings lat/lon. Rain rate from palette → dBZ → Marshall-Palmer mm/h. GitHub Actions only does market.json.
+  centred on settings lat/lon. Rain rate from palette → dBZ → Marshall-Palmer mm/h. GitHub Actions also builds server/maps.py → market-data/maps/ (Thailand radar mosaic th/f0-3.jpg, Himawari IR + GDACS cyclones storm/f0-2.jpg, meta.json); radar.cpp updateMaps() downloads them (pages "ฝนทั่วไทย", "พายุ · ดาวเทียม").
 - Auto location (1.5.0+, geo.cpp): Wi-Fi BSSID scan → BeaconDB geolocate (falls back to IP), then Thai address from
   Nominatim (accept-language=th, classify by prefix ตำบล/แขวง, อำเภอ/เขต, จังหวัด) with BigDataCloud fallback.
   Runs at boot unless the user set a location (Preferences "lman"); serial `autoloc` or /autoloc returns to auto.
@@ -69,3 +69,5 @@ reply in Thai and keep user-facing strings (Serial, web UI) in Thai.
   uses TF10/TF12/TF13B/TF17B (tf()), numbers use VLW 9/11/14/18/24/30 and BIG/CLOCK/SEC glyphs at native size.
   gen_assets.py only embeds TH_* strings that the sketch references.
 - Thai lunar calendar: s3/tools/gen_lunar.py (pythaidate) → lunar.h (month starts 2024-12..2040); lunarOf()/isHoly().
+- Sound: ES3C28P docs give DOUT IO6, PA enable IO1 active LOW → config 0 is the default (no tap test any more;
+  serial `sound` still runs it). A soft tick plays on every page tap.

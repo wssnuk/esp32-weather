@@ -4,7 +4,7 @@
 // ลำโพงบนบอร์ด (ชิปเสียง ES8311 + I2S) — เสียงสังเคราะห์ที่แต่งขึ้นเอง ไม่มีเพลงลิขสิทธิ์
 namespace Sound {
 
-enum Melody : uint8_t { MEL_TEST, MEL_BOOT, MEL_RAIN, MEL_HOUR, MEL_OK };
+enum Melody : uint8_t { MEL_TEST, MEL_BOOT, MEL_RAIN, MEL_HOUR, MEL_OK, MEL_TICK };
 
 bool begin();          // ตรวจหาชิปเสียง + โหลดชุดขาที่ทดสอบแล้ว
 bool needsTest();      // ยังไม่เคยทดสอบลำโพง
